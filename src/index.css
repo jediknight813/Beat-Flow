@@ -159,7 +159,7 @@ h1 > span { color: #b4b1c7; }
 .library-save-status { margin: 13px 0 0; text-align: center; color: #7e9b9e; font-size: 10px; }
 .library-message { margin: 24px 0; color: #9790a8; font-size: 12px; line-height: 1.6; }
 .song-history .panel-heading { gap: 10px; font-size: 8px; letter-spacing: .9px; }
-.song-history ul { padding: 0; margin: 0; list-style: none; max-height: 480px; overflow-y: auto; scrollbar-width: thin; }
+.song-history ul { padding: 0 16px 0 0; margin: 0; list-style: none; max-height: 480px; overflow-y: auto; scrollbar-width: thin; }
 .song-history li { display: flex; gap: 12px; padding: 17px 0; border-bottom: 1px solid #ffffff0c; }
 .song-history li:last-child { border-bottom: 0; padding-bottom: 2px; }
 .history-cover { flex: 0 0 54px; height: 54px; border-radius: 3px; overflow: hidden; background: #151225; }
@@ -174,4 +174,7 @@ h1 > span { color: #b4b1c7; }
 .history-actions button.history-remove { color: #85738c; margin-left: auto; }
 .history-actions button.history-remove:hover { color: #ff8298; }
 .history-confirm { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding: 10px; border: 1px solid #ff315233; color: #b4a0b3; font-size: 10px; }
+.song-history li.history-album-heading { justify-content: space-between; gap: 10px; padding: 16px 0 2px; border-bottom: 0; font-size: 9px; letter-spacing: .9px; text-transform: uppercase; color: #726b83; }
+.song-history li.in-album { position: relative; padding-left: 13px; }
+.song-history li.in-album::before { content: ''; position: absolute; left: 0; top: 17px; height: calc(100% - 34px); width: 2px; border-radius: 2px; background: linear-gradient(180deg, #ff3152, #42d7ff); opacity: .5; }
 @media (max-width: 600px) { .export-cover-row { gap: 13px; } .export-cover { flex-basis: 88px; height: 88px; } .export-cover-copy strong { font-size: 13px; } }
