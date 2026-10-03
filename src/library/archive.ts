@@ -8,7 +8,7 @@ export function exportFileName(title: string): string {
   return `${printable.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled'} - BeatFlow.zip`
 }
 
-export async function songFromResult(result: Result): Promise<SavedSong> {
+export async function songFromResult(result: Result, albumId?: string): Promise<SavedSong> {
   const { default: JSZip } = await import('jszip')
   const archive = await JSZip.loadAsync(await result.zip.arrayBuffer())
   const infoFile = archive.file('Info.dat')
@@ -19,6 +19,12 @@ export async function songFromResult(result: Result): Promise<SavedSong> {
     type: /\.jpe?g$/i.test(info._coverImageFilename) ? 'image/jpeg' : 'image/png',
   }) : null
   const now = Date.now()
+  let version: string | undefined
+  try {
+    const reportFile = archive.file('generation.json')
+    const report = reportFile ? JSON.parse(await reportFile.async('string')) : null
+    if (typeof report?.version === 'string') version = report.version
+  } catch { /* the map still saves without a version */ }
   return {
     zip: result.zip,
     details: {
@@ -27,6 +33,7 @@ export async function songFromResult(result: Result): Promise<SavedSong> {
       charts: result.charts.map((chart) => ({ difficulty: chart.difficulty, notes: chart.notes.length })),
       createdAt: now, updatedAt: now, cover,
       coverSource: result.detected.cover ? 'detected' : 'generated', fileName: result.fileName,
+      version, albumId,
     },
   }
 }
