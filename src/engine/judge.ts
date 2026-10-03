@@ -506,3 +506,12 @@ export async function judgeScores(session: ort.InferenceSession, charts: { notes
   const out = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', data, [charts.length, FEATURES.length]) })
   return Array.from(out[session.outputNames[0]].data as Float32Array)
 }
+
+// Shared swing geometry for the replay-trained strain model. This does not run
+// the old composite judge or its learned scoring network.
+export function analyzeSwings(notes: Note[]): [Swing[], Swing[]] {
+  const ordered = [...notes].sort((a, b) => a.time - b.time || a.hand - b.hand || a.y - b.y || a.x - b.x)
+  const left = swingsOf(ordered, 0), right = swingsOf(ordered, 1)
+  crossMarks(left, right)
+  return [left, right]
+}

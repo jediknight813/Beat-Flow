@@ -47,7 +47,6 @@ export type StageName =
   | 'sections'
   | 'tokens'
   | 'candidates'
-  | 'walls'
   | 'notes'
   | 'lights'
   | 'style'
@@ -77,7 +76,7 @@ export type Settings = {
   candidates: number
 }
 
-export type CandidateSummary = { seed: number; styleBucket: number; topP: number; notes: number; nps: number }
+export type CandidateSummary = { seed: number; styleBucket: number; topP: number; notes: number; nps: number; strain_mean: number; peak_strain: number; coverage_loss: number; loud_gap_seconds: number }
 
 export type ChartSummary = {
   difficulty: Difficulty

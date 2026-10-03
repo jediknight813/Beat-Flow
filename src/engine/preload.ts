@@ -2,8 +2,8 @@ import { cacheModelFile, clearModelCache, type ModelManifest } from './model-cac
 import { pickBackend, type Backend } from './backend'
 
 const GROUPS: Record<Backend, string[]> = {
-  webgpu: ['demucs', 'beatthis', 'crepe', 'notes-fp16', 'lights'],
-  wasm: ['demucs', 'beatthis', 'crepe', 'notes-int8', 'lights'],
+  webgpu: ['demucs', 'beatthis', 'crepe', 'flow-1-v8-notes-fp16', 'flow', 'lights'],
+  wasm: ['demucs', 'beatthis', 'crepe', 'flow-1-v8-notes-int8', 'flow', 'lights'],
 }
 
 export type PreloadState = {

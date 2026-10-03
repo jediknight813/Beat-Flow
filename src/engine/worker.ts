@@ -3,7 +3,8 @@ import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url'
 import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url'
 import { configure, loadModel, pickBackend, releaseGroup, type Backend, type ModelManifest } from './models'
 import { runPipeline, type CoreResult, type Deps, type StereoAudio } from './core'
-import { loadWallData } from './walls'
+import { cachedFetch } from './model-cache'
+import type { StrainModel } from './flow'
 import { coverPixels, loadEnvironmentReference } from './style'
 
 export type WorkerRequest = {
@@ -67,10 +68,13 @@ async function deps(): Promise<Deps> {
       }
       const manifests = await json<Record<string, ModelManifest>>(`${base}manifest.json`)
       if (!name || !manifests?.[name]) throw new Error(`${label} model not available yet`)
-      return loadModel(group, name, chosen, onProgress)
+      return loadModel(group, name, group === 'flow' ? 'wasm' : chosen, onProgress)
     },
     release: releaseGroup,
-    wallData: loadWallData,
+    async strainData() {
+      const response = await cachedFetch(`${import.meta.env.BASE_URL}models/flow/strain.json`, 'flow-1')
+      return await response.json() as StrainModel
+    },
     environmentReference: loadEnvironmentReference,
     async coverPixels(cover) {
       try {

@@ -47,6 +47,8 @@ export type NoteOptions = {
   pick?: Picker
   onProgress?: (fraction: number) => void
   signal?: AbortSignal
+  encoding?: NoteEncoding
+  flowCosts?: (state: NoteState) => Promise<Float32Array>
 }
 
 export type Placed = {
@@ -544,7 +546,7 @@ export class NoteState {
     return g
   }
 
-  chooseGesture(out: GestureLogits) {
+  chooseGesture(out: GestureLogits, flow?: ArrayLike<number>) {
     let g = this.forced ? this.forcedGesture() : null
     if (this.forced) {
       if (g === null) this.abortCopy()
@@ -557,9 +559,16 @@ export class NoteState {
       const parity = this.s(out.parity, this.parityMask(this.time))
       const cutOk = VECTORS.map((_, cut) => Math.abs(roll(this.hand, parity, cut)) <= ROLL_LIMIT)
       const cmask = this.cellMask(this.time)
-      const cut = this.s(out.cut, cutOk)
+      const cutLogits = Float64Array.from(out.cut)
+      if (flow) for (let c = 0; c < 8; c++) {
+        let best = Infinity
+        for (let cell = 0; cell < 12; cell++) if (cmask[cell]) best = Math.min(best, flow[c * 12 + cell])
+        cutLogits[c] -= 1.5 * Math.min(50, best)
+      }
+      const cut = this.s(cutLogits, cutOk)
       const cellLogits = Float64Array.from(out.cell)
       for (const c of CENTRE_CELLS) cellLogits[c] -= CENTRE_PENALTY
+      if (flow) for (let c = 0; c < 12; c++) cellLogits[c] -= 1.5 * flow[cut * 12 + c]
       g = {
         parity,
         cut,
@@ -678,6 +687,13 @@ function bool(values: ArrayLike<boolean>, dims: number[]): ort.Tensor {
   return new ort.Tensor('bool', Uint8Array.from(Array.from(values, (v) => (v ? 1 : 0))), dims)
 }
 
+export type NoteEncoding = { memory: ort.Tensor; memKv: Record<string, ort.Tensor>; cands: Float32Array; keys: Float32Array }
+
+export function disposeNoteEncoding(encoding: NoteEncoding) {
+  encoding.memory.dispose()
+  for (const tensor of Object.values(encoding.memKv)) tensor.dispose()
+}
+
 export class NoteDecoder {
   readonly sessions: NoteSessions
   readonly C: number
@@ -716,7 +732,8 @@ export class NoteDecoder {
     for (const t of ['k', 'v']) for (let i = 0; i < DEC_LAYERS; i++) this.past[`past_${t}_${i}`] = f32(new Float32Array(0), [1, DEC_HEADS, 0, HEAD_DIM])
   }
 
-  async prepare(song: NoteSong) {
+  async prepare(song: NoteSong, encoding?: NoteEncoding) {
+    if (encoding) { Object.assign(this, encoding); return }
     const T = song.sectionLabel.length
     const enc = await this.sessions.encoder.run({
       features: f32(song.features, [1, T, song.features.length / T]),
@@ -731,8 +748,9 @@ export class NoteDecoder {
       cand_feats: f32(song.candFeats, [1, this.C, song.candFeats.length / this.C]),
       cand_tokens: i64(song.candTokens, [1, this.C]),
     })
-    this.cands = c.cands.data as Float32Array
-    this.keys = c.keys.data as Float32Array
+    this.cands = Float32Array.from(c.cands.data as Float32Array)
+    this.keys = Float32Array.from(c.keys.data as Float32Array)
+    c.cands.dispose(); c.keys.dispose()
   }
 
   stateTokens(sw: Placed | null): number[] {
@@ -766,16 +784,23 @@ export class NoteDecoder {
       ...this.memKv,
       ...this.past,
     })
+    for (const old of Object.values(this.past)) old.dispose()
+    this.h?.dispose()
     for (const [k, v] of Object.entries(out)) if (k.startsWith('present_')) this.past[k.replace('present_', 'past_')] = v
     this.position++
     this.h = out.h
-    return { h: out.h.data as Float32Array, handLogits: out.hand_logits.data as Float32Array }
+    const handLogits = Float32Array.from(out.hand_logits.data as Float32Array)
+    out.hand_logits.dispose()
+    return { h: out.h.data as Float32Array, handLogits }
   }
 
   async followLogits(hand: number): Promise<Float32Array> {
+    this.hand?.dispose()
     this.hand = i64([hand], [1])
     const out = await this.sessions.follow.run({ h: this.h, hand: this.hand })
-    return out.follow_logits.data as Float32Array
+    const data = Float32Array.from(out.follow_logits.data as Float32Array)
+    out.follow_logits.dispose()
+    return data
   }
 
   window(): Int32Array {
@@ -783,6 +808,7 @@ export class NoteDecoder {
   }
 
   async pointerLogits(hand: number, follow: number): Promise<Float32Array> {
+    for (const t of [this.follow, this.mineTokens, this.sameTime, this.sameOk]) t?.dispose()
     this.follow = i64([follow], [1])
     const mine = this.last[hand]
     this.mineTokens = i64(this.stateTokens(mine), [1, 4])
@@ -806,7 +832,9 @@ export class NoteDecoder {
       same_time: this.sameTime,
       same_ok: this.sameOk,
     })
-    return out.pointer_logits.data as Float32Array
+    const data = Float32Array.from(out.pointer_logits.data as Float32Array)
+    out.pointer_logits.dispose()
+    return data
   }
 
   async gestureLogits(cand: number): Promise<GestureLogits> {
@@ -821,7 +849,7 @@ export class NoteDecoder {
       same_ok: this.sameOk,
       chosen_cand_repr: f32(this.cands.slice(cand * DC, (cand + 1) * DC), [1, DC]),
     })
-    const get = (k: string) => out[`${k}_logits`].data as Float32Array
+    const get = (k: string) => { const t = out[`${k}_logits`]; const data = Float32Array.from(t.data as Float32Array); t.dispose(); return data }
     return {
       parity: get('parity'),
       cut: get('cut'),
@@ -835,6 +863,11 @@ export class NoteDecoder {
     }
   }
 
+  dispose() {
+    for (const tensor of [...Object.values(this.past), this.h, this.hand, this.follow, this.mineTokens, this.sameTime, this.sameOk,
+      this.difficulty, this.cond, this.condScale, this.songPad]) tensor?.dispose()
+  }
+
   place(placed: Placed, time: number) {
     this.placed = placed
     this.last[placed.hand] = placed
@@ -845,7 +878,7 @@ export class NoteDecoder {
 }
 
 export function noteModelGroup(backend: Backend): string {
-  return backend === 'webgpu' ? 'notes-fp16' : 'notes-int8'
+  return backend === 'webgpu' ? 'flow-1-v8-notes-fp16' : 'flow-1-v8-notes-int8'
 }
 
 export async function loadNoteSessions(backend: Backend, group = noteModelGroup(backend), onProgress?: (fraction: number) => void): Promise<NoteSessions> {
@@ -856,6 +889,17 @@ export async function loadNoteSessions(backend: Backend, group = noteModelGroup(
   return out
 }
 
+export async function prepareNoteSong(sessions: NoteSessions, song: NoteSong, options: NoteOptions): Promise<NoteEncoding> {
+  const dec = new NoteDecoder(sessions, song, options)
+  try {
+    await dec.prepare(song)
+    return { memory: dec.memory, memKv: dec.memKv, cands: dec.cands, keys: dec.keys }
+  } catch (error) {
+    if (dec.memory) disposeNoteEncoding(dec)
+    throw error
+  } finally { dec.dispose() }
+}
+
 export async function generateNotes(sessions: NoteSessions, song: NoteSong, options: NoteOptions): Promise<{ notes: Note[]; arcs: Arc[]; swings: Swing[] }> {
   const check = () => {
     if (options.signal?.aborted) throw new DOMException('cancelled', 'AbortError')
@@ -863,7 +907,8 @@ export async function generateNotes(sessions: NoteSessions, song: NoteSong, opti
   const state = new NoteState(song, options)
   const dec = new NoteDecoder(sessions, song, options)
   check()
-  await dec.prepare(song)
+  try {
+  await dec.prepare(song, options.encoding)
   const maxSwings = options.maxSwings ?? 4000
   for (let position = 0; position < maxSwings; position++) {
     check()
@@ -873,9 +918,15 @@ export async function generateNotes(sessions: NoteSessions, song: NoteSong, opti
     const follow = state.chooseFollow(await dec.followLogits(hand))
     const cand = state.chooseCandidate(await dec.pointerLogits(hand, follow), dec.window())
     if (cand === null) break
-    state.chooseGesture(await dec.gestureLogits(cand))
+    const gesture = await dec.gestureLogits(cand)
+    const flow = options.flowCosts && !(state.forced && state.forcedGesture()) ? await options.flowCosts(state) : undefined
+    state.chooseGesture(gesture, flow)
     dec.place(state.history[state.history.length - 1], state.time)
     options.onProgress?.(Math.min(1, state.prevTime / song.duration))
   }
   return state.result()
+  } finally {
+    dec.dispose()
+    if (!options.encoding && dec.memory) disposeNoteEncoding(dec)
+  }
 }

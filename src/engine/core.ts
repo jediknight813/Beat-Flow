@@ -1,4 +1,4 @@
-import type { Arc, CandidateSummary, Chart, ChartSummary, Detected, Difficulty, Note, Palette, Progress, Settings, StageName, Wall } from './types'
+import type { CandidateSummary, Chart, ChartSummary, Detected, Difficulty, Note, Palette, Progress, Settings, StageName } from './types'
 import { ort, type Backend } from './models'
 import { median, resample, roundDecimals, toFloat16 } from './dsp'
 import { attacks as findAttacks, beatSpectrogram, frameTotal, SR, stemFeatures, storedFeatures, vocalSyllables } from './features'
@@ -9,20 +9,19 @@ import { songGrid } from './grid'
 import { sections as findSections, type Section } from './sections'
 import { songTokens, FEATURES, type FrameArrays } from './tokens'
 import { candidates as findCandidates } from './candidates'
-import { musicBounds, repeatSegments, sustains as findSustains } from './structure'
-import { planWalls, wallRate, type WallAmount, type WallData } from './walls'
-import { fairWall } from './wallRules'
-import { generateNotes, noteModelGroup, NOTE_GRAPHS, type NoteSessions, type NoteSong } from './notes'
+import { musicBounds, repeatSegments } from './structure'
+import { flowCosts, flowMetrics, selectFlowCandidate, type StrainModel } from './flow'
+import { generateNotes, prepareNoteSong, disposeNoteEncoding, noteModelGroup, NOTE_GRAPHS, type NoteSessions, type NoteSong } from './notes'
 import { sampleLights, type Intensity } from './lights'
 import { styleFromPixels, type CoverPixels, type EnvironmentReference } from './style'
 import { buildPackage, LEAD, type LightEvent, type Style } from './package'
 import { fileTags, nameTags } from './tags'
 import type { Syllable } from './vocals'
 
-export const VERSION = 'v10.0'
-const QUALITY = 4
-const COND_SCALE = 3.0
-const TOP_P = [0.95, 1.0]
+export const VERSION = 'flow-1-v8'
+const QUALITY = 0
+const COND_SCALE = 1.0
+const TOP_P = [0.95]
 const DIFF_INDEX: Record<Difficulty, number> = { Expert: 0, ExpertPlus: 1 }
 
 export type StereoAudio = { left: Float32Array; right: Float32Array; sampleRate: number }
@@ -31,7 +30,7 @@ export type Deps = {
   backend: Backend
   model(group: string, file?: string, onProgress?: (fraction: number) => void): Promise<ort.InferenceSession>
   release?(group: string): Promise<void>
-  wallData(): Promise<WallData>
+  strainData(): Promise<StrainModel>
   environmentReference(): Promise<EnvironmentReference>
   coverPixels(cover: Blob): Promise<CoverPixels | null>
 }
@@ -111,22 +110,22 @@ async function stage<T>(report: Reporter, name: StageName, detail: string | unde
 export async function analyze(audio: StereoAudio, deps: Deps, report: Reporter, signal?: AbortSignal): Promise<Analysis> {
   if (audio.sampleRate !== DEMUCS_SR) throw new Error(`expected ${DEMUCS_SR} Hz audio, got ${audio.sampleRate}`)
   const { left, right } = audio
-  report('stems', 0, 'Resampling')
+  report('stems', 0, 'Preparing the audio for analysis')
   const mono = new Float32Array(left.length)
   for (let i = 0; i < mono.length; i++) mono[i] = (left[i] + right[i]) / 2
   const mix16 = resample(mono, DEMUCS_SR, SR)
   const frames = frameTotal(mix16.length)
   const duration = mix16.length / SR
-  const demucs = await deps.model('demucs', undefined, (f) => report('stems', 0.05 * f, 'Loading Demucs'))
+  const demucs = await deps.model('demucs', undefined, (f) => report('stems', 0.05 * f, 'Loading instrument separation'))
   const stems16 = await separate(demucs, [left, right], (f) => report('stems', 0.05 + 0.85 * f, 'Separating drums, bass, other and vocals'), signal)
   await deps.release?.('demucs')
-  report('stems', 0.9, 'Stem features')
+  report('stems', 0.9, 'Reading each instrument’s rhythm and energy')
   const raw = stemFeatures(stems16, mix16)
   const stored = storedFeatures(raw)
   report('stems', 1)
 
-  const beatModel = await deps.model('beatthis', undefined, (f) => report('beats', 0.1 * f, 'Loading Beat This!'))
-  report('beats', 0.1, 'Spectrogram')
+  const beatModel = await deps.model('beatthis', undefined, (f) => report('beats', 0.1 * f, 'Loading beat detection'))
+  report('beats', 0.1, 'Reading the rhythm')
   const spect = beatSpectrogram(mix16)
   const chunks = chunkStarts(spect.frames).length
   const provider = beatThisProvider(beatModel)
@@ -143,7 +142,7 @@ export async function analyze(audio: StereoAudio, deps: Deps, report: Reporter, 
   if (beats.length < 4) throw new Error('No steady beat found in this track')
   report('beats', 1, `${Math.round(tempo)} BPM`)
 
-  const crepe = await deps.model('crepe', undefined, (f) => report('vocals', 0.05 * f, 'Loading CREPE'))
+  const crepe = await deps.model('crepe', undefined, (f) => report('vocals', 0.05 * f, 'Loading vocal analysis'))
   const vocal = stems16[3]
   const { probs, totalFrames } = await crepeProbs(crepe, vocal, (f) => report('vocals', 0.05 + 0.85 * f, 'Tracking vocal pitch'), signal)
   await deps.release?.('crepe')
@@ -155,7 +154,7 @@ export async function analyze(audio: StereoAudio, deps: Deps, report: Reporter, 
   report('attacks', 0)
   const pcm = Float32Array.from(mix16, (v) => Math.max(-32768, Math.min(32767, Math.round(v * 32768))) / 32768)
   const attacks = findAttacks(pcm)
-  report('attacks', 1, `${attacks.length} attacks`)
+  report('attacks', 1, `${attacks.length} musical accents found`)
 
   return {
     duration,
@@ -177,12 +176,8 @@ export async function analyze(audio: StereoAudio, deps: Deps, report: Reporter, 
   }
 }
 
-export function selectCandidate(options: CandidateSummary[], floorNps = 0): number {
-  if (!options.length) throw new Error('no candidates')
-  const eligible = options.map((o, i) => [o, i] as const).filter(([o]) => o.nps >= floorNps)
-  if (!eligible.length) return options.reduce((best, o, i) => (o.nps > options[best].nps ? i : best), 0)
-  const mid = median(eligible.map(([o]) => o.nps))
-  return eligible.reduce((best, cur) => (Math.abs(cur[0].nps - mid) < Math.abs(best[0].nps - mid) ? cur : best))[1]
+export function selectCandidate(options: CandidateSummary[]): number {
+  return selectFlowCandidate(options)
 }
 
 function dedupe(notes: Note[]): Note[] {
@@ -235,32 +230,19 @@ export async function compose(analysis: Analysis, audio: StereoAudio, file: Song
   report('candidates', 0)
   const cands = findCandidates(tokens.grid, attacks, syllables, arrays.onset, arrays.mel, frames, duration, tokens.times)
   const bounds = musicBounds(arrays.rms, frames)
-  const sustains = findSustains(arrays.periodicity, arrays.rms, arrays.onset, syllables.map((s) => s.time), frames)
+  const sustains: [number, number][] = []
   const segments = repeatSegments(features, tokens.count, FEATURES, tokens.times)
-  report('candidates', 1, `${cands.count} candidate times`)
+  report('candidates', 1, `${cands.count} possible note timings found`)
 
-  report('walls', 0)
   const energy = new Float32Array(frames)
   for (let s = 0; s < 4; s++) for (let t = 0; t < frames; t++) energy[t] = Math.fround(energy[t] + arrays.rms[s * frames + t])
   const musicEnd = bounds.musicEnd ?? duration
-  const wallData = await deps.wallData()
-  const amount: WallAmount = settings.walls === 'off' ? 'none' : settings.walls
-  const perMinute = wallRate(wallData, amount, hashSeed(settings.seed, 'walls'))
-  const wallSong = {
-    duration,
-    beats,
-    energy,
-    attacks: [...attacks].sort((a, b) => a - b),
-    syllables: syllables.map((s) => s.time),
-    sections: sectionList,
-    sustains,
-    musicStart: bounds.musicStart,
-    musicEnd,
-  }
-  const plans = Object.fromEntries(difficulties.map((d) => [d, perMinute ? planWalls(wallData, wallSong, d, hashSeed(settings.seed, d), amount, perMinute) : []])) as Record<Difficulty, Wall[]>
-  report('walls', 1, perMinute ? `${perMinute.toFixed(1)} phrases per minute` : 'No walls')
+  report('notes', 0, 'Loading flow guidance and strain checks')
+  const strain = await deps.strainData()
+  const critic = await deps.model('flow', 'critic.onnx')
+  const facts = { spb: 60 / analysis.tempo, musicStart: bounds.musicStart, musicEnd, energy }
 
-  const sessions = await loadNotes(deps, (f) => report('notes', 0.02 * f, 'Loading the note model'))
+  const sessions = await loadNotes(deps, (f) => report('notes', 0.01 + 0.04 * f, 'Loading the flow model'))
   const song: Omit<NoteSong, 'wallsPlan'> = {
     features,
     sectionLabel: tokens.sectionLabel,
@@ -276,47 +258,54 @@ export async function compose(analysis: Analysis, audio: StereoAudio, file: Song
   }
   const count = Math.max(1, Math.round(settings.candidates))
   const jobs = difficulties.length * count
-  const picked: Partial<Record<Difficulty, number>> = {}
   const charts: Chart[] = []
   const summaries: ChartSummary[] = []
   let job = 0
+  try {
   for (const d of difficulties) {
     const di = DIFF_INDEX[d]
     const options: Candidate[] = []
-    for (const [t, topP] of TOP_P.entries()) {
+    const difficultyLabel = d === 'ExpertPlus' ? 'Expert+' : d
+    const noteProgress = (completed: number) => 0.05 + (0.95 * completed) / jobs
+    report('notes', noteProgress(job), `${difficultyLabel} · Preparing note patterns`)
+    const encoding = await prepareNoteSong(sessions, { ...song, wallsPlan: [] }, { difficulty: d, seed: settings.seed })
+    try {
+      for (const [t, topP] of TOP_P.entries()) {
       const perTopP = Math.floor(count / TOP_P.length) + (t < count % TOP_P.length ? 1 : 0)
       for (let c = 0; c < perTopP; c++) {
-        const styleBucket = 1 + ((c + di) % 5)
+        const styleBucket = 0
         const seed = settings.seed + 1000 * c + di + Math.round(topP * 100)
-        const label = `${d === 'ExpertPlus' ? 'Expert+' : d} · candidate ${options.length + 1} of ${count}`
+        const label = `${difficultyLabel} · Variation ${options.length + 1} of ${count}`
         const base = job
-        const out = await generateNotes(sessions, { ...song, wallsPlan: plans[d] }, {
+        const out = await generateNotes(sessions, { ...song, wallsPlan: [] }, {
           difficulty: d,
+          encoding,
           seed,
           temperature: 1.0,
           topP,
           cond: [styleBucket, QUALITY],
           condScale: COND_SCALE,
+          flowCosts: (state) => flowCosts(critic, state.swings, state.hand, state.time, d),
           signal,
-          onProgress: (f) => report('notes', 0.02 + (0.98 * (base + f)) / jobs, label),
+          onProgress: (f) => report('notes', noteProgress(base + 0.9 * f), `${label} · Writing flowing notes`),
         })
+        report('notes', noteProgress(base + 0.9), `${label} · Checking strain and pacing`)
+        const notes = dedupe(out.notes.filter((n) => n.time <= duration - 0.05))
+        const flow = flowMetrics(notes, d, strain, facts)
+        options.push({ seed, styleBucket, topP, notes: notes.length, nps: notes.length / duration, ...flow, chart: { difficulty: d, notes, walls: [], arcs: [] } })
         job++
-        const notes = out.notes
-        const walls: Wall[] = []
-        for (const w of plans[d]) if (fairWall(w, notes, walls)) walls.push(w)
-        options.push({ seed, styleBucket, topP, notes: notes.length, nps: notes.length / duration, chart: { difficulty: d, notes, walls, arcs: out.arcs } })
       }
     }
-    const floor = d === 'ExpertPlus' ? picked.Expert ?? 0 : 0
-    const best = selectCandidate(options, floor)
+    } finally { disposeNoteEncoding(encoding) }
+    report('notes', noteProgress(job - 0.05), `${difficultyLabel} · ${count === 1 ? 'Finalizing the variation' : `Choosing from ${count} variations`}`)
+    const best = selectCandidate(options)
     const chosen = options[best].chart
-    picked[d] = options[best].nps
     const end = duration - 0.05
     const chart: Chart = {
       difficulty: d,
       notes: dedupe(chosen.notes.filter((n) => n.time <= end)),
       walls: chosen.walls.filter((w) => w.time + w.duration <= end),
-      arcs: settings.arcs ? chosen.arcs.filter((a: Arc) => a.tailTime <= end) : [],
+      arcs: [],
     }
     charts.push(chart)
     summaries.push({
@@ -327,14 +316,17 @@ export async function compose(analysis: Analysis, audio: StereoAudio, file: Song
       lightEvents: 0,
       nps: chart.notes.length / duration,
       picked: best,
-      candidates: options.map(({ seed, styleBucket, topP, notes, nps }) => ({ seed, styleBucket, topP, notes, nps })),
+      candidates: options.map(({ chart: _chart, ...summary }) => summary),
     })
   }
-  await deps.release?.(noteModelGroup(deps.backend))
+  } finally {
+    await deps.release?.(noteModelGroup(deps.backend))
+    await deps.release?.('flow')
+  }
   report('notes', 1)
 
   const intensity: Intensity = settings.lighting === 'auto' ? 'normal' : settings.lighting
-  const lightModel = await deps.model('lights', undefined, (f) => report('lights', 0.05 * f, 'Loading the light model'))
+  const lightModel = await deps.model('lights', undefined, (f) => report('lights', 0.05 * f, 'Loading lighting'))
   const lights: { events: LightEvent[]; boosts: [number, boolean][] }[] = []
   for (const [i, chart] of charts.entries()) {
     const result = await sampleLights(
@@ -373,13 +365,14 @@ export async function compose(analysis: Analysis, audio: StereoAudio, file: Song
     bpm: analysis.tempo,
     duration,
     sections: sectionList.length,
-    walls: { enabled: perMinute > 0, perMinute },
+    walls: { enabled: false, perMinute: 0 },
     lighting: intensity,
     environment: auto.environment,
     palette: palette({ environment: auto.environment, colors: auto.colors }),
     seed: settings.seed,
     charts: summaries,
   }
+  report('package', 0, 'Saving notes and lighting')
   const zip = await buildPackage(
     {
       title,
@@ -392,9 +385,9 @@ export async function compose(analysis: Analysis, audio: StereoAudio, file: Song
       sampleRate: audio.sampleRate,
       cover: cover ?? undefined,
       style,
-      report: { version: VERSION, settings: { ...settings, cover: settings.cover === 'auto' ? 'auto' : 'custom' }, detected, style: { category: auto.category, tags: auto.tags, top3: auto.top3, source: auto.source } },
+      report: { version: VERSION, settings: { ...settings, walls: 'off', arcs: false, cover: settings.cover === 'auto' ? 'auto' : 'custom' }, detected, style: { category: auto.category, tags: auto.tags, top3: auto.top3, source: auto.source } },
     },
-    (f) => report('package', f, 'Encoding audio'),
+    (f) => report('package', f, f < 0.2 ? 'Saving notes and lighting' : f < 0.9 ? 'Preparing the song audio' : 'Finishing the map download'),
   )
   report('package', 1)
   return { charts, zip, fileName: `${safeName(title)} - BeatFlow.zip`, duration, detected }
