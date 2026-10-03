@@ -1,4 +1,6 @@
 
+<p align="center"><img src=".github/assets/banner.png" alt="BeatFlow" width="100%"></p>
+
 # BeatFlow
 
 Beat Saber maps generated from a song, entirely in the browser.

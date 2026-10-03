@@ -1,0 +1,46 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;800&display=block" rel="stylesheet">
+<style>
+html,body{margin:0;width:1280px;height:320px;overflow:hidden;background:#070611}
+.b{position:relative;width:1280px;height:320px;font-family:Inter,"Liberation Sans",Arial,sans-serif;color:#f4f4fb;
+  background:
+    radial-gradient(520px 260px at 82% 40%, #ff31521f, transparent 70%),
+    radial-gradient(560px 300px at 96% 75%, #42d7ff22, transparent 70%),
+    #070611;}
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,#070611f5 0%,#070611dc 24%,#07061165 46%,transparent 70%),linear-gradient(0deg,#070611 0%,transparent 30%,transparent 80%,#07061166 100%)}
+.content{position:absolute;left:96px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center}
+.wordmark{display:flex;align-items:center;font-size:76px;font-weight:800;letter-spacing:4px;color:#fff}
+.wordmark span{font-weight:400}
+.icon{display:flex;gap:20px;margin-right:46px;transform:rotate(-12deg)}
+.icon i{width:36px;height:88px;background:#ff3152;box-shadow:0 0 60px #ff24494d,0 0 18px #ff245266}
+.icon i:last-child{background:#42d7ff;box-shadow:0 0 60px #00c8ff4d,0 0 18px #00c8ff66;transform:translateY(20px)}
+.tag{margin-top:30px;display:flex;align-items:center;gap:14px;font-family:"Courier New","Liberation Mono",monospace;font-size:16px;letter-spacing:.4px;color:#aaaabb}
+.tag i{width:8px;height:8px;border-radius:50%;background:#63d7ec;box-shadow:0 0 14px #63d7ec99}
+.stage{position:absolute;right:110px;top:50%;width:368px;height:276px;transform:translateY(-50%);perspective:900px;perspective-origin:50% 35%}
+.layer{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,80px);grid-template-rows:repeat(3,80px);gap:16px;transform-style:preserve-3d}
+.layer.next{transform:translateZ(-620px);opacity:.5}
+.c{border-radius:12px;position:relative}
+.c.r{background:linear-gradient(145deg,#ff4a66,#c4142f);box-shadow:0 0 34px #ff245240}
+.c.u{background:linear-gradient(145deg,#5fe0ff,#1597c4);box-shadow:0 0 34px #00c8ff40}
+.c.down::after,.c.up::after{content:"";position:absolute;left:50%;width:0;height:0;border-left:18px solid transparent;border-right:18px solid transparent;transform:translateX(-50%)}
+.c.down::after{bottom:14%;border-top:13px solid #fff}
+.c.up::after{top:14%;border-bottom:13px solid #fff}
+</style></head><body><div class="b">
+<div class="stage">
+  <div class="layer next">
+    <div class="c r up"></div><div class="c e"></div><div class="c e"></div><div class="c u up"></div>
+    <div class="c e"></div><div class="c e"></div><div class="c e"></div><div class="c e"></div>
+    <div class="c e"></div><div class="c e"></div><div class="c e"></div><div class="c e"></div>
+  </div>
+  <div class="layer">
+    <div class="c e"></div><div class="c e"></div><div class="c e"></div><div class="c e"></div>
+    <div class="c e"></div><div class="c e"></div><div class="c e"></div><div class="c e"></div>
+    <div class="c e"></div><div class="c r down"></div><div class="c u down"></div><div class="c e"></div>
+  </div>
+</div>
+<div class="shade"></div>
+<div class="content">
+  <div class="wordmark"><span class="icon"><i></i><i></i></span>BEAT<span>FLOW</span></div>
+  <div class="tag"><i></i>Beat Saber maps generated from a song, entirely in the browser.</div>
+</div>
+</div></body></html>
