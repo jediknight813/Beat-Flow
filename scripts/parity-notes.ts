@@ -1,3 +1,4 @@
+import { flowCosts } from '../src/engine/flow'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as ort from 'onnxruntime-web'
@@ -118,6 +119,7 @@ class ReplayRng extends Rng {
 async function run(sessions: NoteSessions, song: string) {
   const dir = join(parityDir, song, 'notes')
   const meta = JSON.parse(readFileSync(join(dir, 'song.json'), 'utf8'))
+  const critic = meta.knobs?.flow_lambda ? await ort.InferenceSession.create(readFileSync(join(modelsDir, '../critic.onnx')), { executionProviders: ['wasm'] }) : null
   const trace = JSON.parse(readFileSync(join(dir, 'trace.json'), 'utf8')) as Step[]
   const expected = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8'))
   const hs = bin(join(dir, 'h.f32.bin'), Float32Array)
@@ -219,7 +221,7 @@ async function run(sessions: NoteSessions, song: string) {
     const fg = state.forced ? state.forcedGesture() : null
     const fgExpected = r.forced_gesture ? Object.fromEntries(Object.entries(r.forced_gesture).map(([k, v]) => [GESTURE_KEYS[k], v])) : null
     if (!same(fg, fgExpected)) fail(`forced gesture ${JSON.stringify(fg)} vs ${JSON.stringify(fgExpected)}`)
-    state.chooseGesture(gl)
+    state.chooseGesture(gl, critic && !(state.forced && state.forcedGesture()) ? await flowCosts(critic, state.swings, state.hand, state.time, meta.difficulty) : undefined)
     const placed = state.history[state.history.length - 1]
     const placedExpected = Object.fromEntries(Object.entries(r.placed!).map(([k, v]) => [PLACED_KEYS[k], v]))
     if (same(placed, placedExpected)) agree.placed++
@@ -252,6 +254,8 @@ async function run(sessions: NoteSessions, song: string) {
   console.log(`  masks: window ${agree.window}/${steps}, cell ${agree.cell}/${steps}, parity ${agree.parity}/${steps}, forced ${agree.forced}/${trace.length}, sampling calls ${agree.samples}, placed ${agree.placed}/${steps}`)
   console.log(`  final notes ${notesOk ? 'equal' : 'DIFFER'}, arcs ${arcsOk ? 'equal' : 'DIFFER'}`)
   if (failures.length) console.log(`  FAILURES (${failures.length}):\n    ${failures.slice(0, 20).join('\n    ')}`)
+  dec.dispose()
+  if (critic) await critic.release()
   return failures.length === 0 && worst <= tol
 }
 

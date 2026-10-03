@@ -6,7 +6,6 @@ import * as ort from 'onnxruntime-web'
 import { analyze, compose, reporter, type Analysis, type Deps, type StereoAudio } from '../src/engine/core'
 import { attacks } from '../src/engine/features'
 import type { CoverPixels, EnvironmentReference } from '../src/engine/style'
-import type { WallData } from '../src/engine/walls'
 import type { Progress, Settings } from '../src/engine/types'
 import type { Syllable } from '../src/engine/vocals'
 
@@ -19,12 +18,12 @@ const flag = (name: string, fallback: string) => {
 }
 const songId = flag('--song', 'bereal')
 const fromParity = args.includes('--from-parity')
-const out = flag('--out', '/tmp/claude-1000/-mnt-storage-BeatSaberModelTrainer/1adf4e49-e955-4180-a539-2ddfba56895a/scratchpad/bereal-beatflow.zip')
+const out = flag('--out', '/tmp/bereal-flow-browser.zip')
 const modelsRoot = flag('--models', join(ROOT, 'public/models'))
 const settings: Settings = {
   difficulties: ['Expert', 'ExpertPlus'],
-  walls: flag('--walls', 'auto') as Settings['walls'],
-  arcs: !args.includes('--no-arcs'),
+  walls: 'off',
+  arcs: false,
   lighting: flag('--lighting', 'auto') as Settings['lighting'],
   environment: 'auto',
   colors: 'auto',
@@ -92,7 +91,7 @@ const deps: Deps = {
     const data = new Uint8Array(Buffer.concat(manifest.files.map((f) => readFileSync(join(dir, f)))))
     return ort.InferenceSession.create(data, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
   },
-  wallData: async () => json<WallData>(join(ROOT, 'public/data/walls.json')),
+  strainData: async () => json(join(modelsRoot, 'flow/strain.json')),
   environmentReference: async () => json<EnvironmentReference>(join(ROOT, 'public/data/environment-reference.json')),
   async coverPixels(cover): Promise<CoverPixels | null> {
     if (fromParity && existsSync(parityCover)) {
