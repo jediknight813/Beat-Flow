@@ -1,8 +1,6 @@
 
 <p align="center"><img src=".github/assets/banner.png" alt="BeatFlow" width="100%"></p>
 
-Generates Beat Saber maps with a song, entirely in the browser.
-
 ### Running it locally
 ```
 npm install
