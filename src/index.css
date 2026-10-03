@@ -77,7 +77,6 @@ h1 > span { color: #b4b1c7; }
 .progress-phases .is-complete { color: #8cdff3; }
 .progress-section p, .error-message, .result-message { font-size: 11px; line-height: 1.6; margin: 10px 0 0; overflow-wrap: anywhere; color: #aaa3bd; }
 .progress-section .progress-detail { min-height: 36px; margin-top: 16px; color: #c5bfd3; }
-.progress-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; padding-top: 10px; border-top: 1px solid #ffffff09; font-size: 9px; color: #827b94; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .progress-track > div { transition: none; } }
 .error-message { color: #ff8298; }
 .spinner { width: 15px; height: 15px; border: 2px solid #ffffff45; border-top-color: white; border-radius: 50%; animation: spin .8s linear infinite; }

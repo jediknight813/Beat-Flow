@@ -115,6 +115,9 @@ export default function App() {
   }
   const abort = useRef<AbortController | null>(null)
   const busy = running
+  // Generating mid-download would fetch the same models a second time in the worker.
+  const modelsDownloading = !models || (!models.done && !models.error && !models.deleted)
+  const modelPercent = models?.total ? Math.round((models.loaded / models.total) * 100) : 0
   const album = files.length > 1
   useEffect(() => {
     document.title = busy ? `${overallProgress}% · BeatFlow` : 'BeatFlow'
@@ -185,7 +188,7 @@ export default function App() {
       setRunning(false)
     }
   }
-  const start = () => { if (files.length && !busy) void run(files, generate) }
+  const start = () => { if (files.length && !busy && !modelsDownloading) void run(files, generate) }
   const openNew = () => {
     if (panelView === 'generate') return
     setPanelView('generate')
@@ -347,8 +350,8 @@ export default function App() {
                   </div>
                 </fieldset>
               </details>
-              <button id="generate" type="button" disabled={!files.length || busy || !settings.difficulties.length} onClick={start} className="generate-button">
-                <span>{busy ? (album ? `Creating map ${trackIndex + 1} of ${files.length}…` : 'Creating your map…') : album ? `Generate ${files.length} maps` : 'Generate map'}</span>
+              <button id="generate" type="button" disabled={!files.length || busy || modelsDownloading || !settings.difficulties.length} onClick={start} className="generate-button">
+                <span>{busy ? (album ? `Creating map ${trackIndex + 1} of ${files.length}…` : 'Creating your map…') : modelsDownloading && files.length ? `Downloading models… ${modelPercent}%` : album ? `Generate ${files.length} maps` : 'Generate map'}</span>
                 {busy ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">↗</span>}
               </button>
 
@@ -370,7 +373,6 @@ export default function App() {
                     </li>)}
                   </ol>
                   <p className="progress-detail" aria-live="polite">{progress.detail || generationStages[progress.stage].detail}</p>
-                  <div className="progress-footer"><span>This step · {Math.round(progress.fraction * 100)}%</span><span>In your browser</span></div>
                 </section>
               )}
               {error && <p className="error-message" role="alert">{error}</p>}
