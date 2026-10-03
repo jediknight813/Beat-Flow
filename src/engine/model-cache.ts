@@ -20,14 +20,18 @@ export async function cachedFetch(url: string, version: string, signal?: AbortSi
   signal?.throwIfAborted()
   const res = await fetch(url, { signal })
   if (!res.ok) throw new Error(`model chunk missing: ${url}`)
-  if (cache) {
-    try {
-      await cache.put(key, res.clone())
-    } catch {
-      return res
-    }
+  if (!cache) return res
+  // Store, then read back from the cache. Putting a clone while holding the
+  // original stalls on large network bodies until the other branch is read.
+  try {
+    await cache.put(key, res)
+    const stored = await cache.match(key)
+    if (stored) return stored
+  } catch {
+    // Quota or storage errors: fall through and fetch uncached.
   }
-  return res
+  signal?.throwIfAborted()
+  return fetch(url, { signal })
 }
 
 export async function cachedModels(): Promise<string[]> {

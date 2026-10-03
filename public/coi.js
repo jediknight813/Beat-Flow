@@ -5,6 +5,9 @@ if (typeof window === 'undefined') {
   self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
   self.addEventListener('fetch', (e) => {
     const r = e.request
+    // Only documents and workers need the headers. Everything else, notably the
+    // large model files, bypasses the worker: streaming through it is far slower.
+    if (r.mode !== 'navigate' && !['document', 'iframe', 'worker', 'sharedworker'].includes(r.destination)) return
     if (r.cache === 'only-if-cached' && r.mode !== 'same-origin') return
     e.respondWith(
       fetch(r).then((res) => {
