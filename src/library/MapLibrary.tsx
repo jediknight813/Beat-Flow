@@ -18,7 +18,7 @@ function Cover({ blob, title }: { blob: Blob | null; title: string }) {
   return blob ? <img ref={image} alt={`${title} cover`} /> : <span className="cover-placeholder" aria-hidden="true">♫</span>
 }
 
-function ExportEditor({ song, working, saved, onExport }: { song: SavedSong; working: boolean; saved: boolean; onExport: (edits: ExportDetails) => Promise<boolean> }) {
+function ExportEditor({ song, working, onExport }: { song: SavedSong; working: boolean; onExport: (edits: ExportDetails) => Promise<boolean> }) {
   const [title, setTitle] = useState(song.details.title)
   const [artist, setArtist] = useState(song.details.artist)
   const [cover, setCover] = useState(song.details.cover)
@@ -57,13 +57,13 @@ function ExportEditor({ song, working, saved, onExport }: { song: SavedSong; wor
     <div className="export-charts">{song.details.charts.map((chart) => <span key={chart.difficulty}>{chart.difficulty === 'ExpertPlus' ? 'Expert+' : chart.difficulty} <small>{chart.notes.toLocaleString()} notes</small></span>)}</div>
     {error && <p className="error-message" role="alert">{error}</p>}
     <button type="submit" className="generate-button" disabled={busy || !title.trim()}><span>{working ? 'Preparing export…' : 'Save & download ZIP'}</span><span aria-hidden="true">↓</span></button>
-    {!working && (dirty || saved) && <p className="library-save-status" role="status">{dirty ? 'Changes will be saved when you export' : 'Saved to your history'}</p>}
+    {!working && dirty && <p className="library-save-status" role="status">Changes will be saved when you export</p>}
   </form>
 }
 
-type Props = { result: Result | null; view: PanelView; onViewChange: (view: PanelView) => void; onNew: () => void; generationBusy: boolean }
+type Props = { result: Result | null; view: PanelView; onViewChange: (view: PanelView) => void; onHistoryChange: (count: number) => void; generationBusy: boolean }
 
-export default function MapLibrary({ result, view, onViewChange, onNew, generationBusy }: Props) {
+export default function MapLibrary({ result, view, onViewChange, onHistoryChange, generationBusy }: Props) {
   const [songs, setSongs] = useState<SongDetails[]>([])
   const [active, setActive] = useState<SavedSong | null>(null)
   const [working, setWorking] = useState(false)
@@ -71,7 +71,6 @@ export default function MapLibrary({ result, view, onViewChange, onNew, generati
   const preparing = result !== null && processedResult !== result
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
   const [removeId, setRemoveId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -82,6 +81,25 @@ export default function MapLibrary({ result, view, onViewChange, onNew, generati
     return () => { cancelled = true }
   }, [])
 
+  useEffect(() => { onHistoryChange(songs.length) }, [songs, onHistoryChange])
+
+  // The navbar owns view switching: reset when the view changes, and reload history on entry.
+  const [shownView, setShownView] = useState(view)
+  if (view !== shownView) {
+    setShownView(view)
+    setError(null)
+    if (view === 'generate') { setActive(null); setProcessedResult(null) }
+    if (view === 'history') setLoadingHistory(true)
+  }
+  useEffect(() => {
+    if (view !== 'history') return
+    let cancelled = false
+    void listSongs().then((items) => { if (!cancelled) setSongs(items) })
+      .catch((cause: unknown) => { if (!cancelled) setError(`History unavailable: ${message(cause)}`) })
+      .finally(() => { if (!cancelled) setLoadingHistory(false) })
+    return () => { cancelled = true }
+  }, [view])
+
   useEffect(() => {
     if (!result) return
     let cancelled = false
@@ -90,18 +108,16 @@ export default function MapLibrary({ result, view, onViewChange, onNew, generati
         const song = await songFromResult(result)
         if (cancelled) return
         setError(null)
-        setSaved(false)
         setActive(song)
         try {
           await saveSong(song)
           if (cancelled) return
-          setSaved(true)
           setSongs(await listSongs())
         } catch {
           if (!cancelled) setError('Could not save this map to history. You can still download it below.')
         }
       } catch (cause) {
-        if (!cancelled) { setActive(null); setSaved(false); setError(`Could not open the export editor: ${message(cause)}`) }
+        if (!cancelled) { setActive(null); setError(`Could not open the export editor: ${message(cause)}`) }
       } finally { if (!cancelled) setProcessedResult(result) }
     })()
     return () => { cancelled = true }
@@ -114,8 +130,8 @@ export default function MapLibrary({ result, view, onViewChange, onNew, generati
     try {
       const updated = await updateSongExport(active, edits)
       setActive(updated)
-      try { await saveSong(updated); setSongs(await listSongs()); setSaved(true) }
-      catch { setSaved(false); setError('Download is ready, but these edits could not be saved to history. Browser storage may be full.') }
+      try { await saveSong(updated); setSongs(await listSongs()) }
+      catch { setError('Download is ready, but these edits could not be saved to history. Browser storage may be full.') }
       downloadSong(updated)
       return true
     } catch (cause) { setError(message(cause)); return false }
@@ -129,7 +145,7 @@ export default function MapLibrary({ result, view, onViewChange, onNew, generati
     try {
       const song = await getSong(id)
       if (downloadOnly) downloadSong(song)
-      else { setActive(song); setSaved(true); onViewChange('export') }
+      else { setActive(song); onViewChange('export') }
     } catch (cause) { setError(message(cause)) }
     finally { setWorking(false) }
   }
@@ -137,24 +153,15 @@ export default function MapLibrary({ result, view, onViewChange, onNew, generati
   const removeSong = async (id: string) => {
     setWorking(true)
     setError(null)
-    try { await deleteSong(id); setSongs(await listSongs()); setRemoveId(null); if (active?.details.id === id) setSaved(false) }
+    try { await deleteSong(id); setSongs(await listSongs()); setRemoveId(null) }
     catch (cause) { setError(message(cause)) }
     finally { setWorking(false) }
   }
 
   return <>
-    <nav className="library-nav" aria-label="Map library">
-      <button type="button" aria-current={view === 'generate' ? 'page' : undefined} disabled={generationBusy || working || preparing}
-        onClick={() => { if (view !== 'generate') { setError(null); setActive(null); setProcessedResult(null); setSaved(false); onNew() } }}>New map</button>
-      <button type="button" aria-current={view === 'history' ? 'page' : undefined} disabled={generationBusy || working || preparing}
-        onClick={() => {
-          setError(null); setLoadingHistory(true); onViewChange('history')
-          void listSongs().then(setSongs).catch((cause: unknown) => setError(`History unavailable: ${message(cause)}`)).finally(() => setLoadingHistory(false))
-        }}>History{songs.length > 0 && <span>{songs.length}</span>}</button>
-    </nav>
     {view === 'export' && <>
       {preparing ? <p className="library-message" role="status">Preparing your export…</p>
-        : active ? <ExportEditor key={active.details.id} song={active} working={working} saved={saved} onExport={exportMap} />
+        : active ? <ExportEditor key={active.details.id} song={active} working={working} onExport={exportMap} />
         : working ? <p className="library-message" role="status">Preparing your export…</p>
           : result && <button type="button" className="generate-button" onClick={() => {
             const link = document.createElement('a'); const url = URL.createObjectURL(result.zip)
