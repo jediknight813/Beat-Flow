@@ -1,3 +1,4 @@
+import { getBackendPreference, type BackendPreference } from './backend'
 import type { Progress, Settings } from './types'
 import type { CoreResult } from './core'
 import type { WorkerRequest, WorkerResponse } from './worker'
@@ -7,8 +8,17 @@ export type Result = CoreResult
 
 let worker: Worker | null = null
 let nextId = 0
+let workerPreference: BackendPreference | null = null
 
-function pipelineWorker(): Worker {
+export function resetGenerationWorker(): void {
+  worker?.terminate()
+  worker = null
+  workerPreference = null
+}
+
+function pipelineWorker(preference: BackendPreference): Worker {
+  if (workerPreference !== preference) resetGenerationWorker()
+  workerPreference = preference
   worker ??= new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
   return worker
 }
@@ -25,7 +35,8 @@ export async function generate(file: File, settings: Settings, onProgress: (p: P
   const bytes = await file.arrayBuffer()
   const [left, right] = audio.stereo44k
   const id = ++nextId
-  const w = pipelineWorker()
+  const backendPreference = getBackendPreference()
+  const w = pipelineWorker(backendPreference)
   return new Promise<Result>((resolve, reject) => {
     const finish = () => {
       w.removeEventListener('message', onMessage)
@@ -59,6 +70,7 @@ export async function generate(file: File, settings: Settings, onProgress: (p: P
     signal?.addEventListener('abort', onAbort, { once: true })
     const request: WorkerRequest = {
       type: 'generate',
+      backendPreference,
       id,
       audio: { left, right, sampleRate: audio.sampleRate },
       file: { name: file.name, bytes },

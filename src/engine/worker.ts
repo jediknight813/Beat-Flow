@@ -1,7 +1,8 @@
+import { selectBackend, type BackendPreference } from './backend'
 import type { Progress, Settings } from './types'
 import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url'
 import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url'
-import { configure, loadModel, pickBackend, releaseGroup, type Backend, type ModelManifest } from './models'
+import { configure, loadModel, ort, releaseGroup, type Backend, type ModelManifest } from './models'
 import { runPipeline, type CoreResult, type Deps, type StereoAudio } from './core'
 import { cachedFetch } from './model-cache'
 import type { StrainModel } from './flow'
@@ -9,6 +10,7 @@ import { coverPixels, loadEnvironmentReference } from './style'
 
 export type WorkerRequest = {
   type: 'generate'
+  backendPreference: BackendPreference
   id: number
   audio: StereoAudio
   file: { name: string; bytes: ArrayBuffer | null }
@@ -45,16 +47,19 @@ async function json<T>(url: string): Promise<T | null> {
 
 let backend: Promise<Backend> | null = null
 
-function ready(): Promise<Backend> {
-  backend ??= pickBackend().then((b) => {
-    configure(b, { mjs: ortMjs, wasm: ortWasm })
-    return b
+function ready(preference: BackendPreference): Promise<Backend> {
+  backend ??= selectBackend(preference).then((selection) => {
+    // This installed ORT JSEP backend takes an adapter and requests all required
+    // device limits/features itself. Bind the chosen adapter before any session.
+    if (selection.adapter) ort.env.webgpu.adapter = selection.adapter as typeof ort.env.webgpu.adapter
+    configure(selection.backend, { mjs: ortMjs, wasm: ortWasm })
+    return selection.backend
   })
   return backend
 }
 
-async function deps(): Promise<Deps> {
-  const chosen = await ready()
+async function deps(preference: BackendPreference): Promise<Deps> {
+  const chosen = await ready(preference)
   return {
     backend: chosen,
     async model(group, file, onProgress) {
@@ -90,13 +95,13 @@ async function deps(): Promise<Deps> {
 }
 
 scope.addEventListener('message', async (event) => {
-  const { id, audio, file, settings } = event.data
+  const { id, audio, file, settings, backendPreference } = event.data
   try {
     const result = await runPipeline(
       audio,
       { name: file.name, bytes: file.bytes ? new Uint8Array(file.bytes) : null },
       settings,
-      await deps(),
+      await deps(backendPreference),
       (progress) => scope.postMessage({ type: 'progress', id, progress }),
     )
     scope.postMessage({ type: 'done', id, result })

@@ -84,6 +84,15 @@ export async function deletePreloadedModels(): Promise<void> {
   emit({ ...emptyState, deleted: true })
 }
 
+// Keep downloaded assets, but cancel the old plan before starting the new one.
+export async function restartPreload(): Promise<void> {
+  downloadController?.abort()
+  await started
+  started = null
+  emit({ ...emptyState, deleted: state.deleted })
+  void startPreload()
+}
+
 // The developer shortcut simulates a new visitor, including automatic downloads.
 export async function resetPreloadForDevelopment(): Promise<void> {
   downloadController?.abort()

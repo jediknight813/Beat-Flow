@@ -1,5 +1,6 @@
+import { backendChoices, getBackendPreference, setBackendPreference, type BackendChoice, type BackendPreference } from './engine/backend'
 import { useEffect, useRef, useState } from 'react'
-import { generate, type Result } from './engine/pipeline'
+import { generate, resetGenerationWorker, type Result } from './engine/pipeline'
 import { generationPhases, generationStages, overallGenerationPercent } from './engine/progress'
 import type { Difficulty, Palette, Progress, Settings } from './engine/types'
 import { ENVIRONMENTS } from './engine/style'
@@ -8,7 +9,7 @@ import MapLibrary, { type PanelView } from './library/MapLibrary'
 import { clearSongHistory, listSongs, saveSong } from './library/storage'
 import { songFromResult } from './library/archive'
 import { DEV_TOOLS } from './dev/flags'
-import { deletePreloadedModels, resetPreloadForDevelopment, startPreload, subscribePreload, type PreloadState } from './engine/preload'
+import { deletePreloadedModels, resetPreloadForDevelopment, restartPreload, startPreload, subscribePreload, type PreloadState } from './engine/preload'
 
 const DIFFICULTIES: [Difficulty, string][] = [['Expert', 'Expert'], ['ExpertPlus', 'Expert+']]
 const LIGHTING: [Settings['lighting'], string][] = [['calm', 'Calm'], ['normal', 'Normal'], ['intense', 'Intense']]
@@ -55,6 +56,15 @@ export default function App() {
   const [deletingModels, setDeletingModels] = useState(false)
   const [modelActionError, setModelActionError] = useState<string | null>(null)
   const modelButton = useRef<HTMLButtonElement>(null)
+  const [computeChoices, setComputeChoices] = useState<BackendChoice[]>([])
+  const [computePreference, setComputePreference] = useState(getBackendPreference)
+  const [switchingBackend, setSwitchingBackend] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void backendChoices().then((choices) => { if (!cancelled) setComputeChoices(choices) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const unsubscribe = subscribePreload(setModels)
@@ -95,7 +105,7 @@ export default function App() {
     : models.error
       ? 'Models unavailable'
       : models.done
-        ? `Model downloaded · ${models.backend === 'webgpu' ? 'WebGPU' : 'CPU'}`
+        ? `Model downloaded · ${models.backend === 'webgpu' ? 'GPU' : 'CPU'}`
         : `Loading models ${Math.round((models.loaded / Math.max(1, models.total)) * 100)}%`
 
   const selectFiles = (picked: File[]) => {
@@ -130,8 +140,20 @@ export default function App() {
     difficulties: settings.difficulties.includes(d) ? settings.difficulties.filter((x) => x !== d) : DIFFICULTIES.map(([x]) => x).filter((x) => x === d || settings.difficulties.includes(x)),
   })
 
+  const changeCompute = async (next: BackendPreference) => {
+    if (busy || deletingModels || switchingBackend) return
+    setSwitchingBackend(true)
+    setModelActionError(null)
+    setBackendPreference(next)
+    setComputePreference(next)
+    resetGenerationWorker()
+    try { await restartPreload() }
+    catch (cause) { setModelActionError(errorText(cause)) }
+    finally { setSwitchingBackend(false) }
+  }
+
   const deleteModels = async () => {
-    if (deletingModels || busy) return
+    if (deletingModels || busy || switchingBackend) return
     setDeletingModels(true)
     setModelActionError(null)
     try {
@@ -190,7 +212,7 @@ export default function App() {
       setRunning(false)
     }
   }
-  const start = () => { if (files.length && !busy && !modelsDownloading) void run(files, generate) }
+  const start = () => { if (files.length && !busy && !switchingBackend && !modelsDownloading) void run(files, generate) }
   const openNew = () => {
     if (panelView === 'generate') return
     setPanelView('generate')
@@ -230,10 +252,17 @@ export default function App() {
             onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setModelMenuOpen(false) }}
             onKeyDown={(event) => { if (event.key === 'Escape') { setModelMenuOpen(false); modelButton.current?.focus() } }}>
             <button ref={modelButton} type="button" className="local-badge" aria-expanded={modelMenuOpen} aria-controls="model-actions"
-              onClick={() => setModelMenuOpen((open) => !open)}><i /> {modelLabel}</button>
+              onClick={() => setModelMenuOpen((open) => !open)}><i /> {modelLabel}{computeChoices.length > 1 && <svg className="compute-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>}</button>
             {modelMenuOpen && <div className="model-popover" id="model-actions">
+              {computeChoices.length > 1 && <fieldset className="compute-options" disabled={busy || deletingModels || switchingBackend}>
+                <legend>Run generation on</legend>
+                {[{ id: 'auto' as const, label: 'Automatic', backend: 'wasm' as const }, ...computeChoices].map((choice) => <label key={choice.id}>
+                  <input type="radio" name="compute-backend" value={choice.id} checked={computePreference === choice.id} onChange={() => { void changeCompute(choice.id) }} />
+                  <span>{choice.label}</span>{choice.id === 'auto' && <small>High performance</small>}
+                </label>)}
+              </fieldset>}
               {models?.deleted || models?.error ? <button type="button" onClick={() => { setModelActionError(null); void startPreload(true) }}>Download models</button>
-                : models?.done ? <button type="button" className="delete-models" disabled={deletingModels || busy} onClick={() => void deleteModels()}>
+                : models?.done ? <button type="button" className="delete-models" disabled={deletingModels || busy || switchingBackend} onClick={() => void deleteModels()}>
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><path d="M3 4.5h10M6 4.5V2.8h4v1.7M4.5 4.5l.6 8.5h5.8l.6-8.5M6.5 6.5v4M9.5 6.5v4" /></svg>
                   <span>{deletingModels ? 'Deleting…' : 'Delete models'}</span>
                 </button>
@@ -337,7 +366,7 @@ export default function App() {
                   </div>
                 </fieldset>
               </details>
-              <button id="generate" type="button" disabled={!files.length || busy || modelsDownloading || !settings.difficulties.length} onClick={start} className="generate-button">
+              <button id="generate" type="button" disabled={!files.length || busy || switchingBackend || modelsDownloading || !settings.difficulties.length} onClick={start} className="generate-button">
                 <span>{busy ? (album ? `Creating map ${trackIndex + 1} of ${files.length}…` : 'Creating your map…') : modelsDownloading && files.length ? `Downloading models… ${modelPercent}%` : album ? `Generate ${files.length} maps` : 'Generate map'}</span>
                 {busy ? <span className="spinner" aria-hidden="true" /> : <span aria-hidden="true">↗</span>}
               </button>

@@ -197,3 +197,12 @@ h1 > span { color: #b4b1c7; }
 .song-history li.in-album::before { content: ''; position: absolute; left: 0; top: 17px; height: calc(100% - 34px); width: 2px; border-radius: 2px; background: linear-gradient(180deg, #ff3152, #42d7ff); opacity: .5; }
 
 @media (max-width: 600px) { .export-artwork { width: min(220px, 82%); margin-top: 24px; } .export-title-field input { font-size: 21px; } .export-title-field.is-long input { font-size: 17px; } }
+.compute-chevron { width: 12px; height: 12px; flex: none; transition: transform .2s; }
+.local-badge[aria-expanded="true"] .compute-chevron { transform: rotate(180deg); }
+.compute-options { margin: 0; padding: 9px; border: 0; border-bottom: 1px solid #ffffff10; min-width: 200px; }
+.compute-options legend { padding: 8px 0 0; color: #827b94; font: 9px "Courier New", monospace; }
+.compute-options label { display: flex; align-items: center; gap: 8px; padding: 9px 0; color: #bbb5ca; font-size: 11px; cursor: pointer; }
+.compute-options input { margin: 0; accent-color: #42d7ff; }
+.compute-options label span { overflow-wrap: anywhere; min-width: 0; }
+.compute-options small { color: #777087; font-size: 9px; margin-left: auto; }
+.compute-options:disabled { opacity: .5; }
