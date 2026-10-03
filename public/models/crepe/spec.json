@@ -1,0 +1,97 @@
+{
+ "webgpu": "crepe_full.fp16.onnx",
+ "wasm": "crepe_full.onnx",
+ "model": "torchcrepe full (CREPE, Kim et al. 2018), weights torchcrepe/assets/full.pth",
+ "file": "crepe_full.onnx",
+ "fp16_file": "crepe_full.fp16.onnx",
+ "opset": 17,
+ "params": 22239976,
+ "flops_per_frame": 2820046848.0,
+ "inputs": {
+  "frames": {
+   "shape": [
+    "B",
+    1024
+   ],
+   "dtype": "float32",
+   "desc": "per-frame standardised 16 kHz audio frames"
+  }
+ },
+ "outputs": {
+  "probs": {
+   "shape": [
+    "B",
+    360
+   ],
+   "dtype": "float32",
+   "desc": "sigmoid probability per 20-cent bin (NOT softmaxed)"
+  }
+ },
+ "preprocessing": {
+  "audio": "vocals stem, mono 16 kHz float32 (the Demucs vocals stem resampled 44100 -> 16000)",
+  "pad": "zero-pad 512 samples on both sides",
+  "n_frames": "1 + floor(N16 / 320)",
+  "hop": 320,
+  "window": 1024,
+  "frame_i": "padded[320*i : 320*i + 1024] (centred at sample 320*i of the unpadded signal)",
+  "standardise": "frame = (frame - mean(frame)) / max(1e-10, std(frame)) with UNBIASED std (ddof=1, divide by 1023)",
+  "batch": "any batch size; song.py uses 256; results are batch-independent"
+ },
+ "postprocessing": {
+  "bin_mask": "bins < 62 and bins >= 308 set to -inf before softmax (fmin 65 Hz, fmax 1100 Hz: minidx = floor((1200*log2(65/10) - 1997.3794084376191)/20) = 62, maxidx = ceil((1200*log2(1100/10) - 1997.3794084376191)/20) = 308)",
+  "decoder": "viterbi (torchcrepe.decode.viterbi): obs[t] = softmax over the 360 masked bins of probs[t] (plain softmax of the sigmoid values, NOT logits); transition[i,j] = max(12 - |i-j|, 0) / row sum (i.e. /144); p_init uniform 1/360; log domain with +tiny (float32 tiny = 1.1755e-38) on obs, transition and init: value[0] = log(obs[0]+tiny) + log(1/360+tiny); value[t][j] = log(obs[t][j]+tiny) + max_k(value[t-1][k] + log(trans[k][j]+tiny)), ptr[t][j] = argmax_k (first max wins); backtrack from argmax(value[T-1]). Transitions are only non-zero within |i-j| < 12, so the max over k can be banded (23 wide).",
+  "cents": "cents = 20*bin + 1997.3794084376191 (+ dither: torchcrepe adds triangular noise in [-20, 20] cents, unseeded; the client may omit it or add its own; tokens see <= 0.014 difference)",
+  "frequency": "f = 10 * 2^(cents/1200) Hz; midi = 69 + 12*log2(max(f, 1e-3)/440)",
+  "periodicity": "periodicity[t] = probs[t][bin[t]] (the sigmoid value at the decoded bin, pre-softmax)",
+  "median": "periodicity = median filter, window 3, reflect padding: out[t] = median(x[t-1], x[t], x[t+1]) with x[-1] = x[1], x[T] = x[T-2] (torchcrepe.filter.median; NaN-aware, no NaNs occur here)",
+  "fit": "both arrays truncated/edge-padded to T = ceil(N16/320) frames (song.py fit)",
+  "voicing": "vocal_active = (periodicity > 0.5) & (stem_rms[3] > 0.02); vocal_pitch = midi where vocal_active else NaN; stored float16",
+  "syllables": "vocal_syllables (analysis-spec.md section 7): onset_strength envelope of the vocals stem (librosa defaults, hop 320), onset_detect peak_pick pre_max 1, post_max 1, pre_avg 5, post_avg 6, wait 1, delta 0.07 on the [0,1]-normalised envelope; keep peak p iff vocal_active[max(0,p-2):p+3].any(); strength = z-score of the raw envelope at p"
+ },
+ "verification": {
+  "source": "/mnt/storage/BeatFlow/parity/moody/vocal_pcm.wav",
+  "seconds": 60.0,
+  "n_frames": 3001,
+  "framing_vs_torchcrepe_max_abs": 9.5367431640625e-07,
+  "onnx_vs_torch_probs_max_abs": 3.3080577850341797e-06,
+  "numpy_viterbi_bins_agree_with_torchcrepe_decoder": 1.0,
+  "numpy_periodicity_max_abs_vs_torchcrepe": 0.05877053737640381,
+  "vs_torchcrepe_predict": {
+   "bins_within_dither_20_cents": 0.991669443518827,
+   "periodicity_max_abs": 0.13631334900856018
+  },
+  "fp16": {
+   "recipe": "conv/linear fp16, BatchNormalization fp32 (CUDA emulation)",
+   "probs_max_abs": 0.0006433725357055664,
+   "viterbi_bins_agree": 0.9993335554815062,
+   "voiced_flag_agree": 0.9996667777407531,
+   "periodicity_max_abs": 0.006969809532165527,
+   "all_fp16_probs_max_abs": 0.9057537317276001,
+   "fp16_onnx_on_ort_cpu_max_abs": 0.0004149973392486572
+  },
+  "ort_cpu_seconds_for_frames": 10.037014722824097
+ },
+ "onnx_ops": {
+  "Constant": 51,
+  "Unsqueeze": 2,
+  "ConstantOfShape": 6,
+  "Concat": 6,
+  "Reshape": 13,
+  "Slice": 6,
+  "Transpose": 7,
+  "Cast": 6,
+  "Pad": 6,
+  "Conv": 6,
+  "Relu": 6,
+  "BatchNormalization": 6,
+  "MaxPool": 6,
+  "Gemm": 1,
+  "Sigmoid": 1
+ },
+ "ops_outside_webgpu": {},
+ "sizes_bytes": {
+  "fp32": 88992202,
+  "fp16": 44529885
+ },
+ "wasm_note": "fp32: dynamic int8 tested and rejected (accuracy below the fp16 graph)"
+}

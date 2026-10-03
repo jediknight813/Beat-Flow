@@ -1,0 +1,51 @@
+{
+ "candidates.onnx": {
+  "name": "candidates.onnx",
+  "files": [
+   "candidates.onnx.part00"
+  ],
+  "bytes": 545488
+ },
+ "cross_kv.onnx": {
+  "name": "cross_kv.onnx",
+  "files": [
+   "cross_kv.onnx.part00"
+  ],
+  "bytes": 4285132
+ },
+ "encoder.onnx": {
+  "name": "encoder.onnx",
+  "files": [
+   "encoder.onnx.part00"
+  ],
+  "bytes": 11227260
+ },
+ "follow.onnx": {
+  "name": "follow.onnx",
+  "files": [
+   "follow.onnx.part00"
+  ],
+  "bytes": 9432
+ },
+ "gesture.onnx": {
+  "name": "gesture.onnx",
+  "files": [
+   "gesture.onnx.part00"
+  ],
+  "bytes": 1403953
+ },
+ "pointer.onnx": {
+  "name": "pointer.onnx",
+  "files": [
+   "pointer.onnx.part00"
+  ],
+  "bytes": 317283
+ },
+ "step.onnx": {
+  "name": "step.onnx",
+  "files": [
+   "step.onnx.part00"
+  ],
+  "bytes": 29937487
+ }
+}

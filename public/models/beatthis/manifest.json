@@ -1,0 +1,16 @@
+{
+ "beat_this.fp16.onnx": {
+  "name": "beat_this.fp16.onnx",
+  "files": [
+   "beat_this.fp16.onnx.part00"
+  ],
+  "bytes": 42668120
+ },
+ "beat_this.onnx": {
+  "name": "beat_this.onnx",
+  "files": [
+   "beat_this.onnx.part00"
+  ],
+  "bytes": 83162988
+ }
+}

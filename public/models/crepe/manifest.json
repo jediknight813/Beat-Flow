@@ -1,0 +1,16 @@
+{
+ "crepe_full.fp16.onnx": {
+  "name": "crepe_full.fp16.onnx",
+  "files": [
+   "crepe_full.fp16.onnx.part00"
+  ],
+  "bytes": 44529885
+ },
+ "crepe_full.onnx": {
+  "name": "crepe_full.onnx",
+  "files": [
+   "crepe_full.onnx.part00"
+  ],
+  "bytes": 88992202
+ }
+}

@@ -1,0 +1,149 @@
+{
+ "webgpu": "beat_this.fp16.onnx",
+ "wasm": "beat_this.onnx",
+ "model": "Beat This! final0 (Foscarin et al., ISMIR 2024), checkpoint ~/.cache/torch/hub/checkpoints/beat_this-final0.ckpt (state_dict prefix model. stripped)",
+ "file": "beat_this.onnx",
+ "fp16_file": "beat_this.fp16.onnx",
+ "fp16_recipe": "fp16 except the rotary angle subgraph (Range..Cos/Sin) and ReduceL2 (fp32); converter fp16 round-trip casts removed",
+ "mel_filterbank_file": "mel_fb.f32.bin (513 x 128 float32 row-major, bins x mels; mag @ fb)",
+ "opset": 18,
+ "params": 20251712,
+ "flops_per_1500_frame_chunk": 79070208000,
+ "inputs": {
+  "spect": {
+   "shape": [
+    1,
+    "T",
+    128
+   ],
+   "dtype": "float32",
+   "desc": "log-mel chunk; T = 1500 normally, shorter only when the whole song has < 1488 frames"
+  }
+ },
+ "outputs": {
+  "beat": {
+   "shape": [
+    1,
+    "T"
+   ],
+   "dtype": "float32",
+   "desc": "beat logits per frame (sum head: beat = beat_lin + downbeat_lin)"
+  },
+  "downbeat": {
+   "shape": [
+    1,
+    "T"
+   ],
+   "dtype": "float32",
+   "desc": "downbeat logits per frame"
+  }
+ },
+ "preprocessing": {
+  "audio": "mix16 (mono 16 kHz float32 = mean of the 44.1 kHz stereo decode, resampled with soxr HQ), then resampled 16000 -> 22050 (soxr HQ in Python; any good resampler in the browser, compare by tolerance)",
+  "stft": "center=True with REFLECT padding of 512 samples on both sides; frame_i = x_pad[441*i : 441*i + 1024]; periodic Hann w[n] = 0.5 - 0.5*cos(2*pi*n/1024); rfft 1024 -> 513 bins; magnitude (power=1) divided by sqrt(1024) = 32 (torch.stft normalized=True)",
+  "n_frames": "F = 1 + floor(N22050 / 441) (50 fps; frame i centred at i*0.02 s)",
+  "mel": "mel[f, m] = sum_k mag[f, k] * fb[k, m], fb = torchaudio melscale_fbanks(n_freqs=513, f_min=30, f_max=11000, n_mels=128, sample_rate=22050, norm=None, mel_scale=slaney): Slaney mel scale (linear below 1000 Hz, 200/3 Hz per mel; log above, logstep = ln(6.4)/27), 130 mel points between mel(30) and mel(11000), triangular filters with peak 1.0 (NO area normalisation), evaluated at FFT bin frequencies k*22050/1024",
+  "log": "spect = log1p(1000 * mel), shape (F, 128), float32",
+  "chunking": "beat_this split_predict_aggregate: starts = arange(-6, F-6, 1488); if F > 1488 the last start := F - 1494; chunk = spect[max(start,0) : min(start+1500, F)] zero-padded with max(0, -start) frames on the left and max(0, min(6, start+1500-F)) on the right (the only chunks shorter than 1500 frames: F < 1494... in practice every chunk is 1500 frames when F >= 1494); run the model per chunk"
+ },
+ "postprocessing": {
+  "aggregate": "drop 6 border frames from each chunk output; write into (F,) buffers initialised to -1000 at [start+6, start+1494); earlier chunks win on overlap (process chunks in reverse order and overwrite)",
+  "peaks": "for beat and downbeat logits x separately: p is a peak iff x[p] == max(x[p-3..p+3]) (out-of-range treated as -1000) and x[p] > 0 (prob > 0.5)",
+  "dedup": "deduplicate_peaks(width=1): consecutive peak indices with gaps <= 1 form a group replaced by the mean of its indices (can be a half-integer); times = index / 50",
+  "downbeats": "each downbeat time is replaced by the nearest beat time (argmin |beat - d|, first on ties); then np.unique (sorted, duplicates removed); if there are no beats downbeats are kept as they are",
+  "stored": "beats and downbeats rounded to 4 decimals; tempo_bpm = 60 / median(diff(beats)) (null if < 3 beats); song.py uses the DBN-free minimal postprocessor (dbn=False)"
+ },
+ "verification": {
+  "dynamic_T_700_frames_onnx_vs_torch_max_abs": 9.059906005859375e-06,
+  "fp16_onnx_on_ort_cpu_max_abs": 0.08787822723388672,
+  "songs": {
+   "bereal": {
+    "frames": 6877,
+    "chunks": 5,
+    "mel_numpy_vs_torchaudio_max_abs": 0.0003853057569358498,
+    "logits_onnx_vs_torch_max_abs": 5.53131103515625e-05,
+    "beats": 289,
+    "downbeats": 80,
+    "postprocess_numpy_matches_torch": true,
+    "ort_cpu_seconds": 3.575960159301758,
+    "fp16_logits_max_abs": 1.5864763259887695,
+    "fp16_beats": 289,
+    "fp16_beats_matched_within_10ms": 0.9930795847750865,
+    "fp16_downbeats": 80,
+    "fp16_onnx_ort_cpu_logits_max_abs": 0.10185527801513672,
+    "fp16_onnx_beats": 289,
+    "fp16_onnx_beats_matched_within_10ms": 1.0,
+    "fp16_onnx_downbeats": 80
+   },
+   "moody": {
+    "frames": 9919,
+    "chunks": 7,
+    "mel_numpy_vs_torchaudio_max_abs": 0.0007025562226772308,
+    "logits_onnx_vs_torch_max_abs": 6.437301635742188e-05,
+    "beats": 353,
+    "downbeats": 98,
+    "postprocess_numpy_matches_torch": true,
+    "ort_cpu_seconds": 5.15099573135376,
+    "fp16_logits_max_abs": 0.6315112113952637,
+    "fp16_beats": 354,
+    "fp16_beats_matched_within_10ms": 0.9943502824858758,
+    "fp16_downbeats": 98,
+    "fp16_onnx_ort_cpu_logits_max_abs": 0.1110081672668457,
+    "fp16_onnx_beats": 354,
+    "fp16_onnx_beats_matched_within_10ms": 0.9971751412429378,
+    "fp16_onnx_downbeats": 98
+   },
+   "tongue": {
+    "frames": 8777,
+    "chunks": 6,
+    "mel_numpy_vs_torchaudio_max_abs": 0.0007283104932866991,
+    "logits_onnx_vs_torch_max_abs": 0.0001068115234375,
+    "beats": 324,
+    "downbeats": 83,
+    "postprocess_numpy_matches_torch": true,
+    "ort_cpu_seconds": 4.256082534790039,
+    "fp16_logits_max_abs": 0.9935071468353271,
+    "fp16_beats": 324,
+    "fp16_beats_matched_within_10ms": 0.9938271604938271,
+    "fp16_downbeats": 83,
+    "fp16_onnx_ort_cpu_logits_max_abs": 0.086517333984375,
+    "fp16_onnx_beats": 324,
+    "fp16_onnx_beats_matched_within_10ms": 0.9969135802469136,
+    "fp16_onnx_downbeats": 83
+   }
+  }
+ },
+ "onnx_ops": {
+  "Shape": 13,
+  "Squeeze": 39,
+  "Transpose": 60,
+  "BatchNormalization": 1,
+  "Reshape": 99,
+  "Conv": 4,
+  "Div": 41,
+  "Erf": 16,
+  "Add": 103,
+  "Mul": 167,
+  "ReduceL2": 25,
+  "Clip": 25,
+  "Concat": 55,
+  "Expand": 26,
+  "MatMul": 86,
+  "Slice": 122,
+  "Neg": 24,
+  "Unsqueeze": 50,
+  "Softmax": 12,
+  "Sigmoid": 12,
+  "Cast": 1,
+  "Range": 1,
+  "Cos": 1,
+  "Sin": 1
+ },
+ "ops_outside_webgpu": {},
+ "sizes_bytes": {
+  "fp32": 83162988,
+  "fp16": 42668120,
+  "mel_fb": 262656
+ },
+ "wasm_note": "fp32: dynamic int8 tested and rejected (accuracy below the fp16 graph)"
+}

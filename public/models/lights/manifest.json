@@ -1,0 +1,16 @@
+{
+ "canvas.fp16.onnx": {
+  "name": "canvas.fp16.onnx",
+  "files": [
+   "canvas.fp16.onnx.part00"
+  ],
+  "bytes": 31313235
+ },
+ "canvas.int8.onnx": {
+  "name": "canvas.int8.onnx",
+  "files": [
+   "canvas.int8.onnx.part00"
+  ],
+  "bytes": 18479778
+ }
+}

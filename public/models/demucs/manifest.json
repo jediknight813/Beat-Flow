@@ -1,0 +1,17 @@
+{
+ "htdemucs_core.fp16.onnx": {
+  "name": "htdemucs_core.fp16.onnx",
+  "files": [
+   "htdemucs_core.fp16.onnx.part00"
+  ],
+  "bytes": 91131388
+ },
+ "htdemucs_core.onnx": {
+  "name": "htdemucs_core.onnx",
+  "files": [
+   "htdemucs_core.onnx.part00",
+   "htdemucs_core.onnx.part01"
+  ],
+  "bytes": 174264755
+ }
+}

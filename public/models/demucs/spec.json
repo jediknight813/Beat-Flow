@@ -1,0 +1,242 @@
+{
+ "webgpu": "htdemucs_core.fp16.onnx",
+ "wasm": "htdemucs_core.onnx",
+ "model": "Demucs htdemucs (Hybrid Transformer Demucs, Rouard et al. 2023), bag of one model 955717e8, weights ~/.cache/huggingface/hub/models--adefossez--HTDemucs/snapshots/cbc8a9b1a87023b7fd74e7b3412e6321c0eab003/955717e8.safetensors",
+ "file": "htdemucs_core.onnx",
+ "fp16_file": "htdemucs_core.fp16.onnx",
+ "fp16_recipe": "fp16 except the Core-level input standardisation / output un-standardisation and the positional-embedding subgraphs (fp32); converter round-trip casts removed",
+ "opset": 17,
+ "params": 41984456,
+ "flops_per_chunk": 334921413888,
+ "route": "(b) STFT/iSTFT outside the graph",
+ "full_model_export_attempt": {
+  "dynamo=False": "SymbolicValueError: STFT does not currently support complex types  [Caused by the value '636 defined in (%636 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%626, %635), scop | root cause SymbolicValueError: STFT does not currently support complex types  [Caused by the value '636 defined in (%636 : Float(*, *, strides=[351232, 1], requires_grad=0, device=cpu) = onnx::Reshape[allowzero=0](%626, %635), scope: demucs.htdemucs.HTDemucs:: # /mnt/storage/BeatSaberModelTrainer/.venv/lib/python3.12/site-packages/torch/functional.py:680:0\n)' (type 'Tensor') in the TorchScript graph. The containing node has kind 'onnx::Reshape'.] \n    (node defined in /mnt/storage/BeatSaberModelTrainer/.venv/lib/python3.12/site-packages/torch/functional.py(680): stft\n/mnt/storage/BeatSaberModelTrainer/.venv/lib/python3.12/s",
+  "dynamo=True": "TorchExportError: Failed to export the model with torch.export. \u001b[96mThis is step 1/3\u001b[0m of exporting the model to ONNX. Next steps:\n- Modify the model code for `torch.export.export` to succeed. Refer to https://pytor | root cause GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u0, 1) (unhinted: Eq(u0, 1)).  (Size-like symbols: none)\n\nconsider using data-dependent friendly APIs such as guard_or_false, guard_or_true and statically_known_true.\nCaused by: (_export/non_strict_utils.py:1159 in __torch_function__)\nFor more information, run with TORCH_LOGS=\"dynamic\"\nFor extended logs when we create symbols, also add TORCHDYNAMO_EXTENDED_DEBUG_CREATE_SYMBOL=\"u0\"\nIf you suspect the guard was triggered from C++, add TORCHDYNAMO_EXTENDED_DEBUG_CPP=1\nFor more debugging help, see https://docs.google.com/document/d/1HSuTTVvYH1pTew89R"
+ },
+ "constants": {
+  "samplerate": 44100,
+  "nfft": 4096,
+  "hop": 1024,
+  "segment_samples": 343980,
+  "stride_samples": 257985,
+  "frames": 336,
+  "pad": 1536,
+  "sources": [
+   "drums",
+   "bass",
+   "other",
+   "vocals"
+  ],
+  "window": "periodic Hann 4096: w[n] = 0.5 - 0.5 cos(2 pi n / 4096)",
+  "stft_scale": "1/sqrt(4096) = 1/64 (torch.stft normalized=True)"
+ },
+ "inputs": {
+  "mix": {
+   "shape": [
+    1,
+    2,
+    343980
+   ],
+   "dtype": "float32",
+   "desc": "standardised 44.1 kHz stereo chunk, exactly 343980 samples (zero-padded)"
+  },
+  "spec": {
+   "shape": [
+    1,
+    4,
+    2048,
+    336
+   ],
+   "dtype": "float32",
+   "desc": "STFT of mix, CaC layout [Re L, Im L, Re R, Im R] x 2048 bins (Nyquist dropped) x 336 frames"
+  }
+ },
+ "outputs": {
+  "spec_out": {
+   "shape": [
+    1,
+    4,
+    4,
+    2048,
+    336
+   ],
+   "dtype": "float32",
+   "desc": "per source (drums, bass, other, vocals) CaC spectrogram, same layout as spec"
+  },
+  "wave_out": {
+   "shape": [
+    1,
+    4,
+    2,
+    343980
+   ],
+   "dtype": "float32",
+   "desc": "per source time-branch waveform; stems = istft(spec_out) + wave_out"
+  }
+ },
+ "preprocessing": {
+  "decode": "stereo float32 at 44.1 kHz (ffmpeg -ac 2 -ar 44100 -f f32le in Python); mono files are duplicated to 2 channels",
+  "standardise": "ref = mean of the 2 channels; mean = ref.mean(); std = ref.std(ddof=1) + 1e-8 (torch unbiased std over the whole song); mix_std = (mix - mean) / std",
+  "chunks": "offsets = 0, 257985, 515970, ... while offset < N (stride = int(0.75 * 343980)); chunk length L = min(N - offset, 343980); if L < 343980 the chunk is CENTRED in the 343980 window: start = offset - (343980 - L)//2, samples before 0 / after N are zeros (demucs TensorChunk.padded)",
+  "stft": "per channel of the 343980 chunk: (1) reflect-pad 1536 on the left and 1536 + 84 = 1620 on the right (-> 347136 = 1536 + 336*1024 + 1536); (2) reflect-pad 2048 on both sides (torch.stft center=True); (3) 340 frames x[1024 j : 1024 j + 4096] * hann4096; (4) rfft -> 2049 bins, divide by 64; (5) keep frames 2..337 (336) and bins 0..2047 (drop Nyquist); (6) spec[2c] = Re, spec[2c+1] = Im"
+ },
+ "postprocessing": {
+  "istft": "per source s, channel c: Z = spec_out[s, 2c] + i spec_out[s, 2c+1] (2048 x 336); append a zero Nyquist row (2049 bins) and 2 zero frames on each side (340 frames); for each frame j: y_j = irfft(Z[:, j], n=4096) * 64 * hann4096 (torch.istft normalized=True multiplies by sqrt(n_fft)); overlap-add y_j at 1024 j into a 351232 buffer and hann4096^2 into an envelope buffer; divide by the envelope; drop 2048 samples at both ends (center=True, length 347136); stem = y[1536 : 1536 + 343980]",
+  "combine": "stem_chunk = istft(spec_out) + wave_out, shape (4, 2, 343980)",
+  "overlap_add": "res = stem_chunk[..., (343980 - L)//2 : (343980 - L)//2 + L] (center_trim); out[offset : offset + L] += w[:L] * res; sum_w[offset : offset + L] += w[:L]; w = concat(1..171990, 171990..1) / 171990 (triangle, transition_power 1); stems = out / sum_w",
+  "unstandardise": "stems = stems * std + mean (the mix statistics above)",
+  "downstream": "stems16[s] = resample(stems[s].mean(channels), 44100 -> 16000) (soxr HQ in Python); then the per-stem log-mel (librosa n_fft 1024, win 400, hop 320, 80 mels, slaney, ln(mel + 1e-6)), onset strength and RMS of analysis-spec.md section 4 \u2014 the same mel code must be used for all 4 stems; the mix mel is never used by the tokens",
+  "shifts": "song.py uses shifts=1 (one random shift in [0, 22050] samples, unseeded); the port uses shifts=0, so stems differ from any Python dump at the level of a random shift (parity/index.json: correlation >= 0.99)"
+ },
+ "verification": {
+  "clip": "moody 30.0s..60.0s, 1323000 samples, 6 chunks",
+  "torch_cuda_seconds": 0.7775096893310547,
+  "stft_contract_max_abs": 3.814697265625e-06,
+  "stft_scale": 24.879619598388672,
+  "istft_contract_max_abs": 0.0436476469039917,
+  "istft_scale": 6.0567216873168945,
+  "onnx_pipeline_vs_apply_model": {
+   "drums": {
+    "corr": 0.9999994385668018,
+    "max_abs": 0.002385735511779785,
+    "rms": 0.49967713403154573
+   },
+   "bass": {
+    "corr": 0.9999946100211864,
+    "max_abs": 0.00960695743560791,
+    "rms": 0.3848145675758335
+   },
+   "other": {
+    "corr": 0.999997396172718,
+    "max_abs": 0.0059081315994262695,
+    "rms": 0.4284295527144743
+   },
+   "vocals": {
+    "corr": 0.9999991856201168,
+    "max_abs": 0.0020803213119506836,
+    "rms": 0.6147043899311256
+   }
+  },
+  "fp16_cuda": {
+   "half_error": "RuntimeError: expected scalar type Float but found Half",
+   "autocast_vs_fp32": {
+    "drums": {
+     "corr": 0.999998921187891,
+     "max_abs": 0.013402938842773438,
+     "rms": 0.49967713403154573
+    },
+    "bass": {
+     "corr": 0.9999996830502624,
+     "max_abs": 0.0033897459506988525,
+     "rms": 0.3848145675758335
+    },
+    "other": {
+     "corr": 0.9999988645076798,
+     "max_abs": 0.00732189416885376,
+     "rms": 0.4284295527144743
+    },
+    "vocals": {
+     "corr": 0.9999997799794695,
+     "max_abs": 0.004587739706039429,
+     "rms": 0.6147043899311256
+    }
+   }
+  },
+  "fp16_onnx_on_ort_cpu_vs_fp32_onnx_one_chunk": {
+   "drums": {
+    "corr": 0.9999997807024119,
+    "max_abs": 0.00986480712890625,
+    "rms": 0.4809316812009306
+   },
+   "bass": {
+    "corr": 0.9999998552243246,
+    "max_abs": 0.004881471395492554,
+    "rms": 0.4021710964945516
+   },
+   "other": {
+    "corr": 0.9999998248033724,
+    "max_abs": 0.0027469396591186523,
+    "rms": 0.39763064949420296
+   },
+   "vocals": {
+    "corr": 0.9999999130846473,
+    "max_abs": 0.003233194351196289,
+    "rms": 0.5196117739271736
+   }
+  },
+  "fp16_onnx_pipeline_vs_apply_model": {
+   "drums": {
+    "corr": 0.9999992685070879,
+    "max_abs": 0.009837746620178223,
+    "rms": 0.49967713403154573
+   },
+   "bass": {
+    "corr": 0.9999944673809746,
+    "max_abs": 0.009845376014709473,
+    "rms": 0.3848145675758335
+   },
+   "other": {
+    "corr": 0.9999971896920473,
+    "max_abs": 0.007008194923400879,
+    "rms": 0.4284295527144743
+   },
+   "vocals": {
+    "corr": 0.9999991026051326,
+    "max_abs": 0.004205942153930664,
+    "rms": 0.6147043899311256
+   }
+  },
+  "ort_cpu_seconds_per_chunk": 1.3416513204574585
+ },
+ "onnx_ops": {
+  "Constant": 1009,
+  "ReduceMean": 6,
+  "Shape": 157,
+  "Gather": 60,
+  "ReduceProd": 2,
+  "Sub": 13,
+  "Mul": 339,
+  "Cast": 46,
+  "Div": 78,
+  "Sqrt": 32,
+  "Add": 259,
+  "Conv": 92,
+  "Erf": 56,
+  "Reshape": 299,
+  "InstanceNormalization": 74,
+  "Split": 48,
+  "Sigmoid": 48,
+  "Transpose": 135,
+  "Expand": 21,
+  "Mod": 13,
+  "Unsqueeze": 157,
+  "Concat": 73,
+  "ConstantOfShape": 19,
+  "Slice": 65,
+  "Pad": 3,
+  "Sin": 3,
+  "Tile": 4,
+  "Equal": 12,
+  "Where": 12,
+  "ScatterND": 4,
+  "Cos": 3,
+  "LayerNormalization": 26,
+  "Range": 2,
+  "Pow": 1,
+  "MatMul": 54,
+  "Squeeze": 15,
+  "Softmax": 10,
+  "Gemm": 10,
+  "ConvTranspose": 8
+ },
+ "ops_outside_webgpu": {
+  "Mod": 13
+ },
+ "ops_outside_webgpu_after_ort_load_time_folding": {},
+ "nodes_after_folding": 1459,
+ "sizes_bytes": {
+  "fp32": 174264755,
+  "fp16": 91131388
+ },
+ "wasm_note": "fp32: dynamic int8 tested and rejected (stem correlation 0.86-0.98 vs fp32)"
+}
