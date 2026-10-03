@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { Result } from '../engine/pipeline'
 import { downloadSong, prepareCover, songFromResult, updateSongExport, type ExportDetails } from './archive'
 import { deleteSong, getSong, listSongs, saveSong, type SavedSong, type SongDetails } from './storage'
@@ -171,17 +171,35 @@ export default function MapLibrary({ result, view, onViewChange, onHistoryChange
     {view === 'history' && <section className="song-history" aria-label="Generated songs">
       <div className="panel-heading"><span>YOUR MAPS</span><span className="file-label">SAVED IN THIS BROWSER</span></div>
       {loadingHistory ? <p className="library-message">Loading history…</p> : songs.length === 0 ? <p className="library-message">Your generated maps will appear here.</p> : <ul>
-        {songs.map((song) => <li key={song.id}>
-          <div className="history-cover"><Cover blob={song.cover} title={song.title} /></div>
-          <div className="history-song"><strong>{song.title}</strong><span>{song.artist || 'Unknown artist'}</span><small>{duration(song.duration)} · {new Date(song.createdAt).toLocaleDateString()}</small>
-            <div className="history-actions">
-              <button type="button" disabled={working} onClick={() => void openSong(song.id)}>Edit / export</button>
-              <button type="button" disabled={working} onClick={() => void openSong(song.id, true)}>Download</button>
-              <button type="button" disabled={working} className="history-remove" aria-label={`Remove ${song.title} from history`} onClick={() => setRemoveId(song.id)}>Remove</button>
-            </div>
-            {removeId === song.id && <div className="history-confirm"><span>Remove this saved map?</span><button type="button" disabled={working} onClick={() => void removeSong(song.id)}>Remove</button><button type="button" onClick={() => setRemoveId(null)}>Cancel</button></div>}
-          </div>
-        </li>)}
+        {/* Batch tracks share an albumId; singles keep their own row. */}
+        {(() => {
+          const groups: { albumId: string | null; songs: SongDetails[] }[] = []
+          const byAlbum = new Map<string, { albumId: string; songs: SongDetails[] }>()
+          for (const song of songs) {
+            const existing = song.albumId ? byAlbum.get(song.albumId) : undefined
+            if (existing) { existing.songs.push(song); continue }
+            const group = song.albumId ? { albumId: song.albumId, songs: [song] } : { albumId: null, songs: [song] }
+            if (song.albumId) byAlbum.set(song.albumId, group)
+            groups.push(group)
+          }
+          return groups.map((group) => <Fragment key={group.albumId ?? group.songs[0].id}>
+            {group.albumId && <li className="history-album-heading">
+              <span>Album · {group.songs.length} map{group.songs.length === 1 ? '' : 's'}</span>
+              <span>{new Date(group.songs[0].createdAt).toLocaleDateString()}</span>
+            </li>}
+            {group.songs.map((song) => <li key={song.id} className={group.albumId ? 'in-album' : undefined}>
+              <div className="history-cover"><Cover blob={song.cover} title={song.title} /></div>
+              <div className="history-song"><strong>{song.title}</strong><span>{song.artist || 'Unknown artist'}</span><small>{duration(song.duration)}{song.version ? ` · ${song.version}` : ''} · {new Date(song.createdAt).toLocaleDateString()}</small>
+                <div className="history-actions">
+                  <button type="button" disabled={working} onClick={() => void openSong(song.id)}>Edit / export</button>
+                  <button type="button" disabled={working} onClick={() => void openSong(song.id, true)}>Download</button>
+                  <button type="button" disabled={working} className="history-remove" aria-label={`Remove ${song.title} from history`} onClick={() => setRemoveId(song.id)}>Remove</button>
+                </div>
+                {removeId === song.id && <div className="history-confirm"><span>Remove this saved map?</span><button type="button" disabled={working} onClick={() => void removeSong(song.id)}>Remove</button><button type="button" onClick={() => setRemoveId(null)}>Cancel</button></div>}
+              </div>
+            </li>)}
+          </Fragment>)
+        })()}
       </ul>}
     </section>}
     {error && view !== 'generate' && <p className="error-message" role="alert">{error}</p>}

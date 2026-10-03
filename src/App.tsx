@@ -147,6 +147,8 @@ export default function App() {
   // saves it straight to history and keeps going if a single track fails.
   const run = async (sources: File[], generator: typeof generate) => {
     const batch = sources.length > 1
+    // Batch tracks share an id so history can group them as an album.
+    const albumId = batch ? crypto.randomUUID() : undefined
     const mark = (index: number, status: TrackStatus) => setTracks((current) => current.map((s, i) => (i === index ? status : s)))
     setRunning(true)
     setResult(null)
@@ -170,7 +172,7 @@ export default function App() {
             setPanelView('export')
             return
           }
-          await saveSong(await songFromResult(next))
+          await saveSong(await songFromResult(next, albumId))
           setHistoryCount((await listSongs()).length)
           mark(index, 'done')
         } catch (cause) {
