@@ -137,25 +137,43 @@ h1 > span { color: #b4b1c7; }
 .library-nav button[aria-current], .library-nav button:hover { color: #eee9f4; }
 .library-nav button:disabled { opacity: .5; cursor: default; }
 .library-nav button span { color: #79b7c9; font-family: "Courier New", monospace; font-size: 9px; }
-.export-ready { color: #68cfdf; }
-.export-cover-row { display: flex; align-items: center; gap: 18px; margin: 20px 0 25px; }
-.export-cover { position: relative; display: block; flex: 0 0 100px; height: 100px; overflow: hidden; border: 1px solid #ffffff22; border-radius: 4px; background: #161327; cursor: pointer; }
-.export-cover img, .history-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.export-cover > span:not(.cover-placeholder) { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 2px; text-align: center; font-size: 9px; color: #eee9f4; background: #080613cc; }
+.export-ready { color: #8cdff3; display: flex; align-items: center; gap: 6px; }
+.export-ready::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #8cdff3; box-shadow: 0 0 9px #42d7ff70; }
+.export-editor { animation: export-enter .55s ease both; }
+.export-artwork { position: relative; width: min(240px, 82%); margin: 30px auto 20px; isolation: isolate; }
+.export-artwork-glow { position: absolute; z-index: -1; inset: 12% -12% 12%; background: linear-gradient(125deg, #ff315245, #42d7ff40); filter: blur(28px); border-radius: 40%; animation: cover-glow 7s ease-in-out infinite alternate; }
+.export-cover { position: relative; display: block; cursor: pointer; text-align: center; }
+.cover-image { position: relative; display: block; width: 100%; height: 100%; }
+.cover-image > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cover-image > .cover-brand { position: absolute; object-fit: contain; }
+.export-cover > .cover-image { aspect-ratio: 1; height: auto; overflow: hidden; border: 1px solid #ffffff26; border-radius: 9px; background: #161327; box-shadow: 0 18px 36px #0007; animation: cover-float 6s ease-in-out infinite; transition: box-shadow .3s ease; }
+.export-cover:hover > .cover-image { box-shadow: 0 20px 40px #0008, 0 0 24px #42d7ff18; }
+.export-cover-edit { display: inline-flex; align-items: center; gap: 6px; margin-top: 17px; padding: 6px 10px; border: 1px solid transparent; border-radius: 20px; font-size: 10px; color: #ada6bf; transition: color .2s, border-color .2s; }
+.export-cover-edit svg { width: 12px; height: 12px; }
+.export-cover:hover .export-cover-edit, .export-cover:focus-within .export-cover-edit { color: #e1f5ff; border-color: #42d7ff33; }
 .export-cover input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.export-cover:focus-within { outline: 2px solid #61dbff; outline-offset: 3px; }
+.export-cover:focus-within > .cover-image { outline: 2px solid #61dbff; outline-offset: 5px; }
 .export-cover.is-busy { opacity: .6; cursor: wait; }
 .cover-placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: #8a719e; font-size: 26px; }
-.export-cover-copy strong { font-size: 14px; font-weight: 600; }
-.export-cover-copy p { margin: 8px 0; font-size: 11px; color: #9790a8; line-height: 1.6; }
-.export-cover-copy > span { font-family: "Courier New", monospace; color: #77788f; font-size: 10px; }
-.export-field { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; font-family: "Courier New", monospace; font-size: 9px; letter-spacing: 1px; color: #9b94ac; }
-.export-field input { width: 100%; border: 1px solid #ffffff18; background: #08081270; border-radius: 3px; padding: 11px 12px; font-family: Arial, sans-serif; font-size: 13px; letter-spacing: 0; color: #eeeaf4; }
-.export-field input:focus { outline: 0; border-color: #51c4e0; }
-.export-field input:disabled { opacity: .6; }
-.export-charts { display: flex; flex-wrap: wrap; gap: 7px; margin: 19px 0 4px; }
-.export-charts > span { border: 1px solid #ffffff12; border-radius: 2px; padding: 6px 8px; color: #bcb5cb; font-size: 10px; }
-.export-charts small { color: #777187; margin-left: 5px; }
+.export-song-details { text-align: center; }
+.export-title-field, .export-artist-field { display: block; }
+.export-song-details input { display: block; width: 100%; padding: 7px 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; text-align: center; color: #f4f4fb; transition: background .2s, border-color .2s; }
+.export-title-field input { font-size: 24px; font-weight: 650; letter-spacing: -.7px; }
+.export-title-field.is-long input { font-size: 19px; }
+.export-artist-field input { font-size: 13px; color: #b4aec4; }
+.export-song-details input:hover { background: #ffffff03; border-color: #ffffff10; }
+.export-song-details input:focus { outline: none; background: #08081270; border-color: #51c4e0; }
+.export-song-details input:disabled { opacity: .6; }
+.export-song-stats { display: flex; justify-content: center; gap: 12px; margin: 12px 0 0; color: #938ba7; font: 10px "Courier New", monospace; }
+.export-song-stats > span { color: #5e5870; }
+.export-charts { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 22px 0 6px; }
+.export-charts > span { border: 1px solid #ffffff12; border-radius: 5px; padding: 8px 10px; color: #d4cede; font-size: 11px; background: #ffffff02; }
+.export-charts small { color: #938aa6; margin-left: 5px; font-size: 9px; }
+.export-editor .generate-button { margin-top: 24px; }
+@keyframes export-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cover-float { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-5px) rotate(1deg); } }
+@keyframes cover-glow { from { opacity: .55; transform: scale(.95); } to { opacity: .85; transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .export-editor, .export-cover > .cover-image, .export-artwork-glow { animation: none; } }
 .library-save-status { margin: 13px 0 0; text-align: center; color: #7e9b9e; font-size: 10px; }
 .library-message { margin: 24px 0; color: #9790a8; font-size: 12px; line-height: 1.6; }
 .song-history .panel-heading { gap: 10px; font-size: 8px; letter-spacing: .9px; }
@@ -177,4 +195,5 @@ h1 > span { color: #b4b1c7; }
 .song-history li.history-album-heading { justify-content: space-between; gap: 10px; padding: 16px 0 2px; border-bottom: 0; font-size: 9px; letter-spacing: .9px; text-transform: uppercase; color: #726b83; }
 .song-history li.in-album { position: relative; padding-left: 13px; }
 .song-history li.in-album::before { content: ''; position: absolute; left: 0; top: 17px; height: calc(100% - 34px); width: 2px; border-radius: 2px; background: linear-gradient(180deg, #ff3152, #42d7ff); opacity: .5; }
-@media (max-width: 600px) { .export-cover-row { gap: 13px; } .export-cover { flex-basis: 88px; height: 88px; } .export-cover-copy strong { font-size: 13px; } }
+
+@media (max-width: 600px) { .export-artwork { width: min(220px, 82%); margin-top: 24px; } .export-title-field input { font-size: 21px; } .export-title-field.is-long input { font-size: 17px; } }

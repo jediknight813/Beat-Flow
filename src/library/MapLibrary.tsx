@@ -1,3 +1,4 @@
+import { BRAND_ICON, BRANDING_VERSION, COVER_BADGE_INSET, COVER_BADGE_SIZE, COVER_SIZE } from '../branding'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { Result } from '../engine/pipeline'
 import { downloadSong, prepareCover, songFromResult, updateSongExport, type ExportDetails } from './archive'
@@ -7,7 +8,7 @@ export type PanelView = 'generate' | 'export' | 'history'
 const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.'
 const duration = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
 
-function Cover({ blob, title }: { blob: Blob | null; title: string }) {
+function Cover({ blob, title, branded = false }: { blob: Blob | null; title: string; branded?: boolean }) {
   const image = useRef<HTMLImageElement>(null)
   useEffect(() => {
     if (!blob || !image.current) return
@@ -15,10 +16,10 @@ function Cover({ blob, title }: { blob: Blob | null; title: string }) {
     image.current.src = next
     return () => URL.revokeObjectURL(next)
   }, [blob])
-  return blob ? <img ref={image} alt={`${title} cover`} /> : <span className="cover-placeholder" aria-hidden="true">♫</span>
+  return <span className="cover-image">{blob ? <><img ref={image} alt={`${title} cover`} />{!branded && <img className="cover-brand" src={BRAND_ICON} alt="" aria-hidden="true" style={{ width: `${COVER_BADGE_SIZE / COVER_SIZE * 100}%`, height: `${COVER_BADGE_SIZE / COVER_SIZE * 100}%`, right: `${COVER_BADGE_INSET / COVER_SIZE * 100}%`, bottom: `${COVER_BADGE_INSET / COVER_SIZE * 100}%` }} />}</> : <span className="cover-placeholder" aria-hidden="true">♫</span>}</span>
 }
 
-function ExportEditor({ song, working, onExport }: { song: SavedSong; working: boolean; onExport: (edits: ExportDetails) => Promise<boolean> }) {
+function ExportEditor({ song, working, onExport }: { song: SavedSong; working: boolean; onExport: (edits: ExportDetails) => Promise<SavedSong | null> }) {
   const [title, setTitle] = useState(song.details.title)
   const [artist, setArtist] = useState(song.details.artist)
   const [cover, setCover] = useState(song.details.cover)
@@ -37,26 +38,26 @@ function ExportEditor({ song, working, onExport }: { song: SavedSong; working: b
   }
   return <form className="export-editor" aria-label="Export map" onSubmit={(event) => {
     event.preventDefault()
-    if (!busy) void onExport({ title, artist, cover, coverChanged }).then((saved) => { if (saved) setCoverChanged(false) })
+    if (!busy) void onExport({ title, artist, cover, coverChanged }).then((saved) => { if (saved) { setTitle(saved.details.title); setArtist(saved.details.artist); setCover(saved.details.cover); setCoverChanged(false) } })
   }}>
     <div className="panel-heading"><span>02 / EXPORT MAP</span><span className="export-ready">READY</span></div>
-    <div className="export-cover-row">
+    <div className="export-artwork">
+      <div className="export-artwork-glow" aria-hidden="true" />
       <label className={`export-cover${busy ? ' is-busy' : ''}`}>
-        <Cover blob={cover} title={title || 'Song'} />
-        <span>{coverBusy ? 'Loading…' : 'Change cover'}</span>
+        <Cover blob={cover} title={title || 'Song'} branded={!coverChanged && song.details.brandingVersion === BRANDING_VERSION} />
+        <span className="export-cover-edit"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m10 3 3 3M3 13l3-1 7-7-2-2-7 7-1 3Z" /></svg>{coverBusy ? 'Loading…' : 'Change artwork'}</span>
         <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} aria-label="Album cover"
           onChange={(event) => { void changeCover(event.target.files?.[0]); event.target.value = '' }} />
       </label>
-      <div className="export-cover-copy"><strong>Your map is ready.</strong>
-        <p>{song.details.coverSource === 'generated' && !coverChanged ? 'No album art found. Add a cover, or keep this one.' : 'Review the song details before exporting.'}</p>
-        <span>{duration(song.details.duration)} · {Math.round(song.details.bpm)} BPM</span>
-      </div>
     </div>
-    <label className="export-field">SONG NAME<input required maxLength={200} value={title} disabled={busy} onChange={(event) => setTitle(event.target.value)} /></label>
-    <label className="export-field">ARTIST<input maxLength={200} value={artist} placeholder="Artist name" disabled={busy} onChange={(event) => setArtist(event.target.value)} /></label>
+    <div className="export-song-details">
+      <label className={`export-title-field${title.length > 26 ? ' is-long' : ''}`}><input aria-label="Song name" required maxLength={200} value={title} disabled={busy} onChange={(event) => setTitle(event.target.value)} /></label>
+      <label className="export-artist-field"><input aria-label="Artist" maxLength={200} value={artist} placeholder="Artist name" disabled={busy} onChange={(event) => setArtist(event.target.value)} /></label>
+      <p className="export-song-stats">{duration(song.details.duration)}<span>·</span>{Math.round(song.details.bpm)} BPM</p>
+    </div>
     <div className="export-charts">{song.details.charts.map((chart) => <span key={chart.difficulty}>{chart.difficulty === 'ExpertPlus' ? 'Expert+' : chart.difficulty} <small>{chart.notes.toLocaleString()} notes</small></span>)}</div>
     {error && <p className="error-message" role="alert">{error}</p>}
-    <button type="submit" className="generate-button" disabled={busy || !title.trim()}><span>{working ? 'Preparing export…' : 'Save & download ZIP'}</span><span aria-hidden="true">↓</span></button>
+    <button type="submit" className="generate-button" disabled={busy || !title.trim()}><span>{working ? 'Preparing export…' : 'Download map'}</span><span aria-hidden="true">↓</span></button>
     {!working && dirty && <p className="library-save-status" role="status">Changes will be saved when you export</p>}
   </form>
 }
@@ -123,8 +124,8 @@ export default function MapLibrary({ result, view, onViewChange, onHistoryChange
     return () => { cancelled = true }
   }, [result])
 
-  const exportMap = async (edits: ExportDetails): Promise<boolean> => {
-    if (!active || working) return false
+  const exportMap = async (edits: ExportDetails): Promise<SavedSong | null> => {
+    if (!active || working) return null
     setWorking(true)
     setError(null)
     try {
@@ -133,8 +134,8 @@ export default function MapLibrary({ result, view, onViewChange, onHistoryChange
       try { await saveSong(updated); setSongs(await listSongs()) }
       catch { setError('Download is ready, but these edits could not be saved to history. Browser storage may be full.') }
       downloadSong(updated)
-      return true
-    } catch (cause) { setError(message(cause)); return false }
+      return updated
+    } catch (cause) { setError(message(cause)); return null }
     finally { setWorking(false) }
   }
 
@@ -143,9 +144,15 @@ export default function MapLibrary({ result, view, onViewChange, onHistoryChange
     setWorking(true)
     setError(null)
     try {
-      const song = await getSong(id)
-      if (downloadOnly) downloadSong(song)
-      else { setActive(song); onViewChange('export') }
+      const original = await getSong(id)
+      const song = await updateSongExport(original, { title: original.details.title, artist: original.details.artist, cover: original.details.cover, coverChanged: false })
+      if (downloadOnly) {
+        if (song !== original) {
+          try { await saveSong(song); setSongs(await listSongs()) }
+          catch { setError('Download is ready, but these updates could not be saved to history.') }
+        }
+        downloadSong(song)
+      } else { setActive(song); onViewChange('export') }
     } catch (cause) { setError(message(cause)) }
     finally { setWorking(false) }
   }
@@ -174,7 +181,7 @@ export default function MapLibrary({ result, view, onViewChange, onHistoryChange
         {/* Batch tracks share an albumId; singles keep their own row. */}
         {(() => {
           const groups: { albumId: string | null; songs: SongDetails[] }[] = []
-          const byAlbum = new Map<string, { albumId: string; songs: SongDetails[] }>()
+          const byAlbum = new Map<string, { albumId: string | null; songs: SongDetails[] }>()
           for (const song of songs) {
             const existing = song.albumId ? byAlbum.get(song.albumId) : undefined
             if (existing) { existing.songs.push(song); continue }
@@ -188,7 +195,7 @@ export default function MapLibrary({ result, view, onViewChange, onHistoryChange
               <span>{new Date(group.songs[0].createdAt).toLocaleDateString()}</span>
             </li>}
             {group.songs.map((song) => <li key={song.id} className={group.albumId ? 'in-album' : undefined}>
-              <div className="history-cover"><Cover blob={song.cover} title={song.title} /></div>
+              <div className="history-cover"><Cover blob={song.cover} title={song.title} branded={song.brandingVersion === BRANDING_VERSION} /></div>
               <div className="history-song"><strong>{song.title}</strong><span>{song.artist || 'Unknown artist'}</span><small>{duration(song.duration)}{song.version ? ` · ${song.version}` : ''} · {new Date(song.createdAt).toLocaleDateString()}</small>
                 <div className="history-actions">
                   <button type="button" disabled={working} onClick={() => void openSong(song.id)}>Edit / export</button>

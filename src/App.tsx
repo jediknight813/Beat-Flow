@@ -246,14 +246,14 @@ export default function App() {
 
         <main className="main-content">
           <div className="studio">
-            <div className="intro">
+            {panelView !== 'export' && <div className="intro">
               <h1>Your song.<br /><span>Your stage.</span></h1>
-            </div>
+            </div>}
 
             <section className="generator" aria-label={panelView === 'export' ? 'Export your map' : panelView === 'history' ? 'Song history' : 'Create a Beat Saber map'}>
               <MapLibrary result={result} view={panelView} onViewChange={setPanelView} onHistoryChange={setHistoryCount} generationBusy={busy} />
               {panelView === 'generate' && <>
-              <div className="panel-heading"><span>01 / SELECT {album ? 'TRACKS' : 'TRACK'}</span><span className="file-label">AUDIO INPUT</span></div>
+              <div className="panel-heading"><span>01 / SELECT {album ? 'TRACKS' : 'TRACK'}</span></div>
               <label
                 className={`upload-zone${dragging ? ' is-dragging' : ''}${files.length ? ' has-file' : ''}${busy ? ' is-busy' : ''}`}
                 onDragOver={(event) => { event.preventDefault(); if (!busy) setDragging(true) }}
@@ -322,21 +322,6 @@ export default function App() {
                         <input key={key} type="color" className="advanced-swatch" title={label} aria-label={`${label} colour`} value={palette[key]}
                           onChange={(e) => update({ colors: { ...palette, [key]: e.target.value } })} />
                       ))}
-                    </div>
-                  </div>
-                  <label className="advanced-field"><span>TITLE</span>
-                    <input type="text" value={album ? '' : settings.title} disabled={album} placeholder={album ? "Auto · each track's tags" : auto(detected?.title ?? 'from tags')} onChange={(e) => update({ title: e.target.value })} />
-                  </label>
-                  <label className="advanced-field"><span>ARTIST</span>
-                    <input type="text" value={settings.artist} placeholder={auto(detected?.artist || 'from tags')} onChange={(e) => update({ artist: e.target.value })} />
-                  </label>
-                  <div className="advanced-field"><span>COVER</span>
-                    <div className="advanced-chips">
-                      <label className="advanced-file">
-                        <input type="file" accept="image/png,image/jpeg" onChange={(e) => { const f = e.target.files?.[0]; if (f) update({ cover: f }) }} />
-                        {settings.cover === 'auto' ? auto(detected && (detected.cover ? 'Embedded art' : 'Generated')) : 'Custom image'}
-                      </label>
-                      {settings.cover !== 'auto' && <button type="button" onClick={() => update({ cover: 'auto' })}>Auto</button>}
                     </div>
                   </div>
                   <label className="advanced-field"><span>VARIATIONS</span>
