@@ -1,0 +1,9 @@
+{
+ "critic.onnx": {
+  "name": "critic.onnx",
+  "files": [
+   "critic.onnx.part00"
+  ],
+  "bytes": 578268
+ }
+}
