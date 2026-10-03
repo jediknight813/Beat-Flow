@@ -1,6 +1,8 @@
 
 <p align="center"><img src=".github/assets/banner.png" alt="BeatFlow" width="100%"></p>
 
+[Website](https://jediknight813.github.io/Beat-Flow/)
+
 ### Running it locally
 ```
 npm install
