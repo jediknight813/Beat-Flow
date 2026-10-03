@@ -1,11 +1,12 @@
+import { BRANDING_VERSION, brandCover, brandedSongTitle, songTitle } from '../branding'
 import type { Result } from '../engine/pipeline'
 import type { SavedSong } from './storage'
 
 export type ExportDetails = { title: string; artist: string; cover: Blob | null; coverChanged: boolean }
 
 export function exportFileName(title: string): string {
-  const printable = [...title].map((character) => character.charCodeAt(0) < 32 ? ' ' : character).join('')
-  return `${printable.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled'} - BeatFlow.zip`
+  const printable = [...brandedSongTitle(title)].map((character) => character.charCodeAt(0) < 32 ? ' ' : character).join('')
+  return `${printable.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled [BF]'}.zip`
 }
 
 export async function songFromResult(result: Result, albumId?: string): Promise<SavedSong> {
@@ -25,7 +26,7 @@ export async function songFromResult(result: Result, albumId?: string): Promise<
     const report = reportFile ? JSON.parse(await reportFile.async('string')) : null
     if (typeof report?.version === 'string') version = report.version
   } catch { /* the map still saves without a version */ }
-  return {
+  const song: SavedSong = {
     zip: result.zip,
     details: {
       id: crypto.randomUUID(), title: result.detected.title, artist: result.detected.artist,
@@ -36,38 +37,48 @@ export async function songFromResult(result: Result, albumId?: string): Promise<
       version, albumId,
     },
   }
+  return updateSongExport(song, { title: song.details.title, artist: song.details.artist, cover, coverChanged: false })
 }
 
 export async function updateSongExport(song: SavedSong, edits: ExportDetails): Promise<SavedSong> {
-  const title = edits.title.trim()
+  const title = songTitle(edits.title)
   if (!title) throw new Error('Enter a song name before exporting.')
   const artist = edits.artist.trim()
-  if (title === song.details.title && artist === song.details.artist && !edits.coverChanged) return song
+  if (song.details.brandingVersion === BRANDING_VERSION && title === song.details.title && artist === song.details.artist && !edits.coverChanged) return song
   const { default: JSZip } = await import('jszip')
   const archive = await JSZip.loadAsync(await song.zip.arrayBuffer())
   const infoFile = archive.file('Info.dat')
   if (!infoFile) throw new Error('This map is missing Info.dat.')
   const info = JSON.parse(await infoFile.async('string'))
-  const suffix = typeof info._songName === 'string' ? info._songName.match(/ \[AI [^\]]+\]$/)?.[0] ?? '' : ''
-  info._songName = title + suffix
+  info._songName = brandedSongTitle(title)
+  info._songSubName = ''
   info._songAuthorName = artist
-  if (edits.coverChanged && edits.cover) {
+  info._levelAuthorName = 'BeatFlow'
+  let cover = song.details.cover
+  if (edits.coverChanged) cover = edits.cover
+  if (!cover && typeof info._coverImageFilename === 'string') {
+    const embedded = archive.file(info._coverImageFilename)
+    if (embedded) cover = new Blob([await embedded.async('arraybuffer')])
+  }
+  if (!cover) throw new Error('Choose album artwork before exporting.')
+  if (edits.coverChanged || song.details.brandingVersion !== BRANDING_VERSION) {
+    cover = await brandCover(cover)
     const previous = info._coverImageFilename
     if (typeof previous === 'string' && /\.(png|jpe?g|webp)$/i.test(previous)) archive.remove(previous)
     info._coverImageFilename = 'cover.png'
-    archive.file('cover.png', await edits.cover.arrayBuffer())
+    archive.file('cover.png', await cover.arrayBuffer())
   }
   archive.file('Info.dat', JSON.stringify(info, null, 2))
   const reportFile = archive.file('generation.json')
   if (reportFile) {
     const report = JSON.parse(await reportFile.async('string'))
-    report.export = { title, artist, customCover: edits.coverChanged || song.details.coverSource === 'custom', editedAt: new Date().toISOString() }
+    report.export = { title, artist, songName: brandedSongTitle(title), brandingVersion: BRANDING_VERSION, customCover: edits.coverChanged || song.details.coverSource === 'custom', editedAt: new Date().toISOString() }
     archive.file('generation.json', JSON.stringify(report, null, 2))
   }
   return {
     zip: await archive.generateAsync({ type: 'blob', compression: 'STORE' }),
     details: { ...song.details, title, artist, updatedAt: Date.now(), fileName: exportFileName(title),
-      cover: edits.cover, coverSource: edits.coverChanged ? 'custom' : song.details.coverSource },
+      cover, brandingVersion: BRANDING_VERSION, coverSource: edits.coverChanged ? 'custom' : song.details.coverSource },
   }
 }
 

@@ -10,6 +10,7 @@ export type SongDetails = {
   cover: Blob | null
   coverSource: 'detected' | 'generated' | 'custom'
   fileName: string
+  brandingVersion?: number
   version?: string
   albumId?: string
 }

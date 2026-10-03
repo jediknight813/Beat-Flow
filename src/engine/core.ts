@@ -1,3 +1,4 @@
+import { brandedSongTitle } from '../branding'
 import type { CandidateSummary, Chart, ChartSummary, Detected, Difficulty, Note, Palette, Progress, Settings, StageName } from './types'
 import { ort, type Backend } from './models'
 import { median, resample, roundDecimals, toFloat16 } from './dsp'
@@ -390,7 +391,7 @@ export async function compose(analysis: Analysis, audio: StereoAudio, file: Song
     (f) => report('package', f, f < 0.2 ? 'Saving notes and lighting' : f < 0.9 ? 'Preparing the song audio' : 'Finishing the map download'),
   )
   report('package', 1)
-  return { charts, zip, fileName: `${safeName(title)} - BeatFlow.zip`, duration, detected }
+  return { charts, zip, fileName: `${safeName(brandedSongTitle(title))}.zip`, duration, detected }
 }
 
 export async function runPipeline(audio: StereoAudio, file: SongFile, settings: Settings, deps: Deps, onProgress: (p: Progress) => void, signal?: AbortSignal): Promise<CoreResult> {

@@ -1,3 +1,4 @@
+import { brandedSongTitle } from '../branding'
 import JSZip from 'jszip'
 import { createOggEncoder } from 'wasm-media-encoders'
 import type { Chart, Difficulty } from './types'
@@ -203,10 +204,10 @@ export async function buildPackage(input: PackageInput, onProgress?: (fraction: 
   const coverName = cover.type === 'image/jpeg' ? 'cover.jpg' : 'cover.png'
   const info: Record<string, unknown> = {
     _version: '2.1.0',
-    _songName: `${input.title} [AI ${input.version}]`,
-    _songSubName: 'Experimental AI map',
+    _songName: brandedSongTitle(input.title),
+    _songSubName: '',
     _songAuthorName: input.artist,
-    _levelAuthorName: `BeatFlow ${input.version}`,
+    _levelAuthorName: 'BeatFlow',
     _beatsPerMinute: beats.baseBpm,
     _songTimeOffset: 0,
     _shuffle: 0,
