@@ -6,6 +6,7 @@ import { ENVIRONMENTS } from './engine/style'
 import Backdrop from './scene/Backdrop'
 import MapLibrary, { type PanelView } from './library/MapLibrary'
 import { clearSongHistory } from './library/storage'
+import { DEV_TOOLS } from './dev/flags'
 import { deletePreloadedModels, resetPreloadForDevelopment, startPreload, subscribePreload, type PreloadState } from './engine/preload'
 
 const stages: Record<Progress['stage'], string> = {
@@ -69,11 +70,20 @@ export default function App() {
     return unsubscribe
   }, [])
 
+  // Dev tools: Ctrl+X resets models and history, Ctrl+S runs a fake generation.
+  const fakeRun = useRef<() => void>(() => {})
   useEffect(() => {
+    if (!DEV_TOOLS) return
     const onKey = async (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'x' || event.repeat) return
+      const key = event.key.toLowerCase()
+      if (!(event.ctrlKey || event.metaKey) || (key !== 'x' && key !== 's') || event.repeat) return
       const target = event.target as HTMLElement | null
       if (target?.isContentEditable || target?.closest('input, textarea, select')) return
+      if (key === 's') {
+        event.preventDefault()
+        fakeRun.current()
+        return
+      }
       if (window.getSelection()?.toString()) return
       event.preventDefault()
       try {
@@ -128,14 +138,13 @@ export default function App() {
     }
   }
 
-  const start = async () => {
-    if (!file || busy) return
+  const run = async (source: File, generator: typeof generate) => {
     setResult(null)
     setError(null)
     setOverallProgress(0)
     abort.current = new AbortController()
     try {
-      setResult(await generate(file, { ...settings }, (next) => {
+      setResult(await generator(source, { ...settings }, (next) => {
         setProgress(next)
         setOverallProgress((current) => Math.max(current, overallGenerationPercent(next)))
       }, abort.current.signal))
@@ -144,6 +153,20 @@ export default function App() {
       setError(e instanceof Error ? e.message : String(e))
     }
   }
+  const start = () => { if (file && !busy) void run(file, generate) }
+  useEffect(() => {
+    // import.meta.env.DEV inline lets the production build drop the fake chunk entirely.
+    if (import.meta.env.DEV && DEV_TOOLS) fakeRun.current = () => {
+      if (busy || !settings.difficulties.length) return
+      void import('./dev/fake-generate').then(({ fakeGenerate, fakeSongFile }) => {
+        const source = fakeSongFile()
+        setPanelView('generate')
+        setFile(source)
+        setProgress(null)
+        return run(source, fakeGenerate)
+      })
+    }
+  })
 
   return (
     <>
