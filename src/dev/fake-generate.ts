@@ -13,30 +13,44 @@ const SONGS = [
   { title: 'Satellite Hearts', artist: 'Nova Lane', bpm: 122, hues: [204, 330], colors: ['#2f9bff', '#ff3fa4'] },
 ]
 
-// Pipeline order, matching overallGenerationPercent, with a rough share of the run.
-const STAGES: [StageName, number, (song: FakeSong) => string | undefined][] = [
-  ['decode', 0.4, (s) => `${s.duration.toFixed(1)} s at 44100 Hz`],
-  ['stems', 2.2, () => 'drums · bass · vocals · other'],
-  ['beats', 0.8, (s) => `${s.bpm} BPM`],
-  ['vocals', 0.8, () => undefined],
-  ['attacks', 0.5, () => undefined],
-  ['grid', 0.3, () => undefined],
-  ['sections', 0.4, () => '9 sections'],
-  ['tokens', 0.4, () => undefined],
-  ['candidates', 0.4, () => '1,184 candidate times'],
-  ['walls', 0.4, () => undefined],
-  ['notes', 1.8, () => 'candidate 4 of 4'],
-  ['lights', 0.6, () => undefined],
-  ['style', 0.3, () => undefined],
-  ['package', 0.5, () => undefined],
-]
+type FakeStage = [StageName, number, (song: FakeSong) => string | undefined]
+
+// Follow the real pipeline, including each difficulty's variations and checks.
+function stages(settings: Settings): FakeStage[] {
+  const count = Math.max(1, Math.round(settings.candidates))
+  const notes: FakeStage[] = [['notes', 0.4, () => 'Loading flow guidance and strain checks']]
+  for (const difficulty of settings.difficulties) {
+    const label = difficulty === 'ExpertPlus' ? 'Expert+' : difficulty
+    notes.push(['notes', 0.2, () => `${label} · Preparing note patterns`])
+    for (let i = 1; i <= count; i++) {
+      notes.push(['notes', 0.4, () => `${label} · Variation ${i} of ${count} · Writing flowing notes`])
+      notes.push(['notes', 0.2, () => `${label} · Variation ${i} of ${count} · Checking strain and pacing`])
+    }
+    notes.push(['notes', 0.3, () => `${label} · ${count === 1 ? 'Finalizing the variation' : `Choosing from ${count} variations`}`])
+  }
+  return [
+    ['decode', 0.4, (s) => `${s.duration.toFixed(1)} s at 44100 Hz`],
+    ['stems', 2.2, () => 'drums · bass · vocals · other'],
+    ['beats', 0.8, (s) => `${s.bpm} BPM`],
+    ['vocals', 0.8, () => undefined],
+    ['attacks', 0.5, () => undefined],
+    ['grid', 0.3, () => undefined],
+    ['sections', 0.4, () => '9 sections'],
+    ['tokens', 0.4, () => undefined],
+    ['candidates', 0.4, () => '1,184 possible note timings found'],
+    ...notes,
+    ['lights', 0.6, () => undefined],
+    ['style', 0.3, () => undefined],
+    ['package', 0.5, () => 'Saving notes, lighting, and audio'],
+  ]
+}
 const STEP_MS = 120
 
 type FakeSong = (typeof SONGS)[number] & { duration: number }
 
-export function fakeSongFile(): File {
-  const song = SONGS[Math.floor(Math.random() * SONGS.length)]
-  return new File([new Uint8Array(1024)], `${song.artist} - ${song.title}.mp3`, { type: 'audio/mpeg' })
+export function fakeSongFiles(count: number): File[] {
+  const songs = [...SONGS].sort(() => Math.random() - 0.5).slice(0, count)
+  return songs.map((song) => new File([new Uint8Array(1024)], `${song.artist} - ${song.title}.mp3`, { type: 'audio/mpeg' }))
 }
 
 function songFor(file: File): FakeSong {
@@ -99,13 +113,18 @@ function chart(difficulty: Difficulty, song: FakeSong): Chart {
 export async function fakeGenerate(file: File, settings: Settings, onProgress: (p: Progress) => void, signal?: AbortSignal): Promise<Result> {
   const song = songFor(file)
   const timings: Result['timings'] = {}
-  for (const [stage, seconds, detail] of STAGES) {
+  const pipeline = stages(settings)
+  const totals: Partial<Record<StageName, number>> = {}
+  for (const [stage, seconds] of pipeline) totals[stage] = (totals[stage] ?? 0) + seconds
+  const completed: Partial<Record<StageName, number>> = {}
+  for (const [stage, seconds, detail] of pipeline) {
     const steps = Math.max(2, Math.round((seconds * 1000) / STEP_MS))
     for (let i = 0; i <= steps; i++) {
-      onProgress({ stage, fraction: i / steps, detail: i === steps ? detail(song) : undefined })
+      onProgress({ stage, fraction: ((completed[stage] ?? 0) + seconds * i / steps) / totals[stage]!, detail: detail(song) })
       if (i < steps) await wait(STEP_MS, signal)
     }
-    timings[stage] = seconds * 1000
+    completed[stage] = (completed[stage] ?? 0) + seconds
+    timings[stage] = completed[stage]! * 1000
   }
 
   const title = settings.title.trim() || song.title
@@ -139,7 +158,7 @@ export async function fakeGenerate(file: File, settings: Settings, onProgress: (
     timings,
     detected: {
       title, artist, cover: settings.cover === 'auto', bpm: song.bpm, duration: song.duration, sections: 9,
-      walls: { enabled: settings.walls !== 'off', perMinute: 6.5 },
+      walls: { enabled: false, perMinute: 0 },
       lighting: settings.lighting === 'auto' ? 'normal' : settings.lighting,
       environment: settings.environment === 'auto' ? 'BillieEnvironment' : settings.environment,
       palette, seed: settings.seed,
